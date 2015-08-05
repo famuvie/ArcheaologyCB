@@ -1,0 +1,96 @@
+---
+title: "Analysis of a Point Pattern in R"
+author: "Facundo Muñoz"
+date: "10/06/2014"
+output:
+  pdf_document:
+    pandoc_args: [
+      "--output", "../reports/Point_Pattern.pdf"
+    ]
+---
+
+Sample script to show how to analyse a Point Pattern in R.
+We model the dataset with an inhomogeneous Poisson Process, estimate its intensity function, and compute its gradient rate.
+
+
+```{r packages, include = FALSE}
+library(spatstat)   # density.ppp(): compute KDE of intensity surface
+library(raster)     # terrain(): compute slope of intensity surface
+library(ggplot2)    # nicer plots
+```
+
+Read coordinates from csv.
+Units are meters? Rescale to km.
+
+```{r load}
+coord <- read.csv('../data/faunacoordinates.csv',
+                  header = FALSE,
+                  col.names = c('x', 'y'))
+coord <- coord/1e3
+```
+
+
+Take a look at the data. 
+
+```{r plot-coord}
+ggplot(coord, aes(x, y)) +
+  geom_point() +
+  coord_fixed()
+```
+
+
+Create a `spatstat`'s Point Pattern object from the coordinates.
+
+```{r create-ppp}
+# Define region as a rectangle containing all the points
+# with limits extended by 4%
+extend.range <- function(x, pct) {
+  range <- range(x)
+  range + c(-1, 1) * pct * diff(range) / 100
+}
+pct = 4
+lims <- sapply(coord, extend.range, pct)
+dat.ppp <- as.ppp(coord, as.owin(c(lims)))
+mean.intensity <- with(dat.ppp, n/diff(window$xrange)/diff(window$yrange))
+```
+
+The \emph{mean intensity} is the average density of points over the region, and takes the value
+```r mean.intensity``` in this case.
+
+
+Compute a Kernel Density Estimate of the intensity function.
+See `?spatstat::density.ppp` for details
+
+```{r compute-intensity}
+intensity <- density(dat.ppp)
+# plot(intensity, main = 'Estimate of intensity')
+# Nicer:
+ggplot(with(intensity, cbind(expand.grid(x = xcol, y = yrow),
+                             z = c(t(v)))),
+       aes(x, y, fill = z)) +
+  geom_raster() + 
+  scale_fill_gradient2(low  ="#3A3A98FF",
+              high = "#832424FF",
+              midpoint = mean.intensity) +
+  coord_fixed()
+```
+
+
+Compute the slope of the intensity surface.
+As far as I understand, this is what Maximiano Castillejo calls *spatial gradient*.
+Here it is important to make sure that `x` and `y` are *projected* coordinates, and not lat/lon.
+
+```{r compute-slope}
+# transform the image as a RasterLayer object
+# just use the EPSG code to state that coordinates are planar
+intens.rst <- raster(intensity, crs = CRS("+init=epsg:3732"))
+slope.rst <- terrain(intens.rst)
+# plot(slope.rst, main = 'Slope of intensity')
+# Nicer:
+ggplot(data.frame(coordinates(slope.rst),
+                  z = slope.rst@data@values),
+       aes(x, y, fill = z)) +
+  geom_raster() + 
+  coord_fixed()
+```
+

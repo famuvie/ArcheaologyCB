@@ -1,0 +1,17 @@
+base
+devtools
+sp
+MASS
+geoR
+geoRcb
+raster
+igraph
+Matrix
+gdistance
+readxl
+tidyr
+dplyr
+ggplot2
+gridExtra
+rmarkdown
+knitr
