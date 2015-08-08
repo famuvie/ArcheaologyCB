@@ -1,11 +1,11 @@
-version: 0.6
+version: 0.6-1
 data_loading: TRUE
 cache_loading: TRUE
 recursive_loading: TRUE
 munging: TRUE
 logging: FALSE
 load_libraries: TRUE
-libraries: tidyr, plyr, dplyr, ggplot2, shpReader
+libraries: spatstat, raster, gdistance, geoRcb, tidyr, plyr, dplyr, ggplot2, ggthemes, knitr, shpReader, viridis, readxl, gridExtra
 as_factors: TRUE
-data_tables: TRUE
+data_tables: FALSE
 attach_internal_libraries: FALSE

@@ -1,0 +1,363 @@
+---
+title: "Analysis of soil at Casa de las Aguilas"
+author: "Facundo Muñoz"
+date: "05/08/2015"
+output:
+  pdf_document:
+    fig_caption: true
+    pandoc_args: [
+      "--output", "../reports/Casa_de_las_Aguilas.pdf"
+    ]
+---
+
+
+```{r ProjectTemplate-setup, include = FALSE}
+## This automatically loads packages, data and helper functions
+## and perform munging operations as defined for the project
+library(ProjectTemplate)
+load.project()
+```
+
+```{r setup-knitr, include = FALSE}
+opts_chunk$set(echo       = FALSE,
+               message    = FALSE,
+               warning    = FALSE,
+               comment    = NA,
+               fig.width  = 6,
+               fig.height = 5,
+               fig.caption = TRUE,
+               cache      = TRUE)
+```
+
+```{r setup-ggplot}
+# theme_set(theme_bw())
+theme_set(theme_tufte())
+```
+
+
+Here we compare the outcome of a classical kriging against a cost-based kriging which takes into account the presence of a semi-barrier
+
+## Data description
+
+```{r raw-data, fig.cap = 'Measurement locations and observed values'}
+plot(shp.area.trabajo)
+plot(shp.construcciones)
+
+shp.construcciones@data$id <- rownames(shp.construcciones@data)
+structures <- fortify(shp.construcciones, region = 'id')
+structures <- join(structures, shp.construcciones@data, by = 'id')
+
+ggplot(shp.construcciones, aes(long, lat)) +
+  geom_polygon(aes(group = group)) +
+  geom_path(aes(group = group), data = shp.area.trabajo) +
+  coord_equal() +
+  geom_point(aes(x, y, color = pc), data = obs, size = 5, shape = 15) +
+  scale_color_viridis() +
+  labs(x = NULL, y = NULL)
+
+```
+
+
+
+```{r smoothed-data, fig.cap = 'Exploratory kernel smoothing of the measurements'}
+## Create a `spatstat`'s Point Pattern object from the coordinates.
+dat.ppp <- as.ppp(obs, owin(poly = rev(border_coord)))
+# plot(dat.ppp)
+
+## Relative dimensions of the region
+y2x_factor <- 1/do.call('/', as.list(diff(t(bbox(shp.contorno)))))
+dimyx <- round(128 * c(y2x_factor, 1))
+
+smooth.im <- Smooth(dat.ppp, dimyx = dimyx, sigma = 2)
+smooth.dat <- as.data.frame(smooth.im)
+
+ggplot(smooth.dat, aes(x, y)) +
+  geom_raster(aes(fill = value)) +
+  coord_equal() +
+  scale_fill_viridis() +
+  geom_path(data = border_coord) +
+  geom_polygon(aes(long, lat, group = group), data = shp.construcciones, alpha = 0.5) +
+  geom_point(data = coords(dat.ppp), alpha = 0.5, size = 1) +
+  labs(x = NULL, y = NULL)
+
+
+
+```
+
+
+## Euclidean kriging
+
+It may make sense to use the *room* as a covariate in this model (Universal kriging).
+For the moment, we just perform an ordinary kriging.
+
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+```{r prediction-locations}
+loc <- smooth.dat[, c('x', 'y')]
+```
+
+```{r euclidean-kriging}
+
+obs.gd <- as.geodata(obs, data.col="pc")
+
+## compute euclidean (only) variogram
+vg.std <- variog(obs.gd)
+
+## fitting variogram models
+vgmdl.std <- likfit(geodata = obs.gd,
+                    fix.nugget = FALSE,
+                    ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                    cov.model = "matern",
+                    lik.method = "REML")
+
+
+## Fitted parameters
+data.frame(
+  parameters=c("tausq","sigmasq","phi"),
+  Euclidean=c(round(vgmdl.std$tausq,2),round(vgmdl.std$sigmasq,2),round(vgmdl.std$phi,0))
+  # , Cost_based=c(round(vgmdl.dmat$tausq,2),round(vgmdl.dmat$sigmasq,2),round(vgmdl.dmat$phi,0))
+  )
+
+
+## practical range
+## defined as the value for which the correlation function
+## decays to 5% of its value at 0
+x <- seq(0, 20)
+y <- cov.spatial(x, cov.pars = vgmdl.std$cov.pars)
+pract_range <- min(x[y<0.05*y[1]])    # 5
+# Note that the cost-based  analysis detects a
+# longer-ranged correlation structure
+
+
+# Conventional Kriging, Euclidean distances
+KC.std = krige.control(obj.model = vgmdl.std)
+kriging.std <- krige.conv(obs.gd, locations = loc, krige = KC.std)
+
+```
+
+Practical range: `r pract_range` m.
+
+
+```{r variogram-plot, fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+
+ggplot(vg.std) + geom_variogram(vgmdl.std) + xlim(c(0, 20))
+
+
+```
+
+
+```{r map-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+ggplot(data.frame(loc, Prediction = kriging.std$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_point(data = coords(dat.ppp), colour = 'white', alpha = 0.5, size = 1) +
+  geom_polygon(aes(long, lat, group = group), data = shp.construcciones, alpha = 0.5) +
+  geom_path(data = border_coord) +
+  labs(x = NULL, y = NULL) +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  coord_equal() 
+
+```
+
+
+
+## Cost-based kriging
+
+
+## Variogram estimation
+
+Empirical (classical) variogram with Calcium observations.
+No need to compute cost-based variogram, as the only obstacle is off the observations envelope.
+
+The variogram model is exponential with nugget fixed to 0, as is expected for a continuously varying quantity like Calcium content.
+In any case, it is estimated as zero.
+
+```{r variogram, include=FALSE}
+## Observations as geodata
+obs.gd <- as.geodata(multielem, data.col="Ca %")
+
+## Distance matrix Obs-Obs
+## No obstacles within the observations
+## So, no need to compute cost-based distances
+oo.dist <- dist(obs.gd$coords)
+
+## compute euclidean (only) variogram
+vg.std <- variog(obs.gd)
+# str(vg.std)
+
+## fitting variogram models
+vgmdl.std <- likfit(geodata = obs.gd,
+                    fix.nugget = TRUE,
+                    ini = c(10, 5),
+                    cov.model = "exponential",
+                    lik.method = "REML")
+
+```
+
+
+
+```{r variogram-plot, fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+
+ggplot(vg.std) + geom_variogram(vgmdl.std)
+
+```
+
+```{r prediction locations, echo=FALSE}
+## Prediction locations
+loc <- data.frame(lims)  %>% 
+  lapply(function(x) seq(x[1], x[2], by = .05)) %>%
+  expand.grid()
+
+## Cost surface
+cost_surf <- raster(nrow = 109, ncol = 76,
+                    xmn = lims[1, 'X'], xmx = lims[2, 'X'],
+                    ymn = lims[1, 'Y'], ymx = lims[2, 'Y'],
+                    vals = 1,  # Initial value of "cost"
+                    crs = NA)  
+
+cost_loc <- coordinates(cost_surf)
+outer.idx <- point.in.polygon(cost_loc[, 'x'],
+                              cost_loc[, 'y'],
+                              border_coord$x,
+                              border_coord$y) == 0
+cost_surf[!outer.idx] <- 0   # High friction == low "conductivity"
+# image(cost_surf)
+
+## Make sure no one lies within the barrier
+## Is this necessary? this complicates plotting
+# border <- border_coord%>%
+#   Polygon %>%
+#   list() %>%
+#   Polygons(ID = 'border') %>% 
+#   list() %>%
+#   SpatialPolygons()
+# plot(border)
+
+outer.idx <- point.in.polygon(loc$X,
+                              loc$Y,
+                              border_coord$x,
+                              border_coord$y) == 0
+# loc <- loc[outer.idx, ]
+```
+
+
+```{r conventional-kriging, include=FALSE}
+
+# Conventional Kriging, Euclidean distances
+KC.std = krige.control(obj.model = vgmdl.std)
+kriging.std <- krige.conv(obs.gd, locations = loc, krige = KC.std)
+```
+
+
+
+
+```{r cost-based-distances, fig.width=10, fig.height=17, warning=FALSE, echo = FALSE, fig.cap='Cost-based distances to each of the observation locations.'}
+## Euclidean distances from data to locations
+dl <- apply(coordinates(multielem), 1, dist1, loc)
+
+## Find the locations "behind the wall"
+behind.idx <- dist1(origin, loc) <= radius*.95
+
+# ggplot(data.frame(multielem), aes(X, Y)) +
+#   geom_point(col = 'lightgray') +
+#   geom_polygon(aes(x, y), data = border_coord, col = 'lightgray') +
+#   geom_point(aes(X, Y), data = loc, col = as.numeric(behind.idx)+1) +
+# #   geom_point(aes(x, y), data = data.frame(coordinates(cost_surf))) +
+#   coord_fixed() +
+#   theme_bw()
+
+## This is a matrix of "conductivity" between all pairs of neighbouring locations
+## as a function of their values, and corrected by the distance
+loc_transition <- transition(cost_surf,
+                             transitionFunction = min,
+                             directions = 16) %>%
+  geoCorrection(type = 'c', multpl = FALSE)
+# image(transitionMatrix(loc_transition))
+# plot(raster(loc_transition))   # mean conductivity wrt neighbors
+# summary(transitionMatrix(loc_transition)@x)
+
+## Cost-based distances from prediction to observation locations 
+dl.cost <- costDistance(loc_transition, coordinates(loc), coordinates(multielem))
+
+## Cost-based maps to each observation
+cb.maps <-  cbind(loc, dl.cost) %>%
+  gather("Observation", "Distance", -(X:Y))
+
+ggplot(cb.maps, aes(X, Y)) + 
+  geom_tile(aes(fill = Distance, color = Distance)) +
+  stat_contour(aes(z = Distance), color = 'lightgray') +
+  geom_point(aes(X, Y), data = data.frame(multielem), col = 'white', alpha = .5) +
+  geom_polygon(aes(x, y), data = border_coord) +
+  scale_fill_gradient(low = '#034E7B', high = '#FDAE6B') +
+  scale_color_gradient(low = '#034E7B', high = '#FDAE6B') +
+  coord_fixed() +
+  facet_wrap(~Observation) 
+```
+
+
+
+```{r cost-based-kriging, include=FALSE}
+## With trend, Cost-based distances
+KC.cost = KC.std  # Since the variogram model has not changed
+
+kriging.cost <- krige.conv(obs.gd,
+                           locations = loc,
+                           krige=KC.cost,
+                           #dd.dists.mat = dd.distmat,  # These are Euclidean
+                           dl.dists.mat = dl.cost)
+
+```
+
+```{r map-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+# image(kriging.std)
+# image(kriging.cost)
+
+res.df <- data.frame(loc, 
+                     method = c(rep('Classical', nrow(loc)),
+                                rep('Cost-based', nrow(loc)),
+                                rep('Difference', nrow(loc))),
+                     Prediction = c(kriging.std$predict,
+                                    kriging.cost$predict,
+                                    kriging.std$predict-kriging.cost$predict))
+
+pred.comp <- 
+  ggplot(filter(res.df, method != 'Difference'),
+         aes(X, Y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_point(aes(X, Y), data = data.frame(multielem), col = 'white', alpha = .5) +
+  geom_polygon(aes(x, y), data = border_coord) +
+  scale_fill_gradient("Prediction", low = '#2c7fb8', high = '#fdae6b') +
+  scale_color_gradient("Prediction", low = '#2c7fb8', high = '#fdae6b') +
+  coord_fixed() +
+  facet_wrap(~method) +
+  theme_bw()
+
+print(pred.comp)
+```
+
+
+
+```{r map-kriging-difference, fig.width=5, fig.height=7, fig.cap='Difference between the cost-based prediction and the Euclidean prediction'}
+
+pred.dif <- 
+  ggplot(filter(res.df, method == 'Difference'),
+         aes(X, Y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_point(aes(X, Y), data = data.frame(multielem), col = 'black', alpha = .5) +
+  geom_polygon(aes(x, y), data = border_coord) +
+  scale_fill_gradient2(low  ="#3A3A98FF",
+                       high = "#832424FF") +
+  scale_color_gradient2(low  ="#3A3A98FF",
+                       high = "#832424FF") +
+  coord_fixed() +
+  facet_wrap(~method) +
+  theme_bw()
+
+print(pred.dif)
+# grid.arrange(pred.comp, pred.dif)
+```
+
