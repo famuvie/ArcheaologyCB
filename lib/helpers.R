@@ -12,7 +12,8 @@ rev.data.frame <- function(x) {
 
 ## Methods for ploting variograms with ggplot
 ggplot.variogram <- function(x, vgm, ...) {
-  xdf <- as.data.frame(x[1:3])
+  idx <- match(c('u', 'v', 'n'), names(x))
+  xdf <- as.data.frame(x[idx])
   names(xdf) <- c('distance', 'semivariance', 'n')
   ggplot(xdf, aes(distance, semivariance)) +
     geom_point(aes(size = n)) + 
@@ -51,6 +52,6 @@ geom_variogram <- function(x, max.dist, scaled = FALSE, ...) {
                                               kappa = my.l$kappa, cov.pars = my.l$cov.pars))
   }
   dat <- transform(data.frame(x = seq(0, my.l$max.dist, length = 101)),
-                   y = gamma.f(x, my.l = my.l))
-  geom_line(aes(x, y), data = dat, ...)
+                   y = gamma.f(x, my.l = my.l), ...)
+  geom_line(aes(x, y), data = dat)
 }
