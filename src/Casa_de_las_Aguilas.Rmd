@@ -1,7 +1,7 @@
 ---
 title: "Analysis of soil at Casa de las Aguilas"
 author: "Facundo Muñoz"
-date: "05/08/2015"
+date: "\\today"
 output:
   pdf_document:
     fig_caption: true
@@ -20,7 +20,7 @@ opts_chunk$set(echo       = FALSE,
                fig.width  = 4,
                fig.height = 4,
                fig.caption = TRUE,
-               cache      = TRUE)
+               cache      = FALSE)
 ```
 
 ```{r setup-ProjectTemplate, include = FALSE}
@@ -154,6 +154,7 @@ vg.std <- variog(obs.gd)
 vgmdl.std <- likfit(geodata = obs.gd,
                     fix.nugget = FALSE,
                     fix.kappa = FALSE,
+                    kappa = 0.51,
                     ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
                     cov.model = "matern",
                     lik.method = "REML")
@@ -275,6 +276,7 @@ vg.cst <- variog(obs.gd, dists.mat = ddm$obs)
 vgmdl.cst <- likfit(geodata = obs.gd,
                     fix.nugget = FALSE,
                     fix.kappa = FALSE,
+                    kappa = 0.51,
                     ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
                     cov.model = "matern",
                     lik.method = "REML",
