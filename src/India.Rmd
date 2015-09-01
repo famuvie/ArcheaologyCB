@@ -1,0 +1,545 @@
+---
+title: "Analysis of soil at India"
+author: "Facundo Muñoz"
+date: "\\today"
+output:
+  pdf_document:
+    fig_caption: true
+    pandoc_args: [
+      "--output", "../reports/India.pdf"
+    ]
+---
+
+```{r setup-knitr, echo = FALSE}
+library(knitr)
+opts_knit$set(root.dir = "..")
+opts_chunk$set(echo       = FALSE,
+               message    = FALSE,
+               warning    = FALSE,
+               comment    = NA,
+               fig.width  = 4,
+               fig.height = 4,
+               fig.caption = TRUE,
+               cache      = FALSE)
+```
+
+```{r setup-ProjectTemplate, include = FALSE}
+## This automatically loads packages, data and helper functions
+## and perform munging operations as defined for the project
+library(ProjectTemplate)
+load.project()
+```
+
+
+```{r setup-ggplot}
+# theme_set(theme_bw())
+theme_set(theme_tufte())
+
+## To reuse in most plots:
+## - structures + border + observations
+## - equal scales + no labs
+geom_india <- function()
+  list(geom_polygon(aes(long, lat, group = group),
+                    data = shp.walls),
+  geom_point(aes(x, y), data = dataset.Ca.Cu, alpha = 0.5, size = 1),
+  coord_equal(),
+  labs(x = NULL, y = NULL))
+
+```
+
+
+Here we compare the outcome of a classical kriging against a cost-based kriging which takes into account the presence of a barrier.
+
+## Data description
+
+```{r data-summary}
+str(dataset.Ca.Cu)
+summary(dataset.Ca.Cu)
+
+ggplot(obs.india, aes(value)) +
+  geom_histogram() +
+  facet_wrap(~ variable, scales = 'free_x') 
+```
+
+
+Figures 1 and 2 display the raw data, and an exploratory smoothed surface.
+
+```{r raw-data, fig.cap = 'Measurement locations and observed values'}
+# plot(shp.area.trabajo)
+# plot(shp.construcciones)
+
+# shp.construcciones@data$id <- rownames(shp.construcciones@data)
+# structures <- fortify(shp.construcciones, region = 'id')
+# structures <- join(structures, shp.construcciones@data, by = 'id')
+
+  
+p.Ca <- ggplot(shp.walls, aes(long, lat)) +
+  geom_india() +
+  geom_point(aes(x, y, color = Ca), data = dataset.Ca.Cu, size = 5, shape = 15) +
+  scale_color_viridis() 
+
+p.Cu <- ggplot(shp.walls, aes(long, lat)) +
+  geom_india() +
+  geom_point(aes(x, y, color = Cu), data = dataset.Ca.Cu, size = 5, shape = 15) +
+  scale_color_viridis()
+
+grid.arrange(p.Ca, p.Cu)
+```
+
+
+
+```{r smoothed-data, fig.cap = 'Exploratory kernel smoothing of the measurements'}
+## Create a `spatstat`'s Point Pattern object from the coordinates.
+dat.ppp <- as.ppp(dataset.Ca.Cu[, -1],
+                  owin(xrange = extent.india[1:2],
+                       yrange = extent.india[3:4]))
+# plot(dat.ppp)
+
+## Relative dimensions of the region
+y2x_factor <- 1/do.call('/', as.list(diff(t(bbox(extent.india)))))
+dimyx <- round(128 * c(y2x_factor, 1))
+
+smooth.im <- Smooth(dat.ppp, dimyx = dimyx, sigma = 1)
+# plot(smooth.im)
+smooth.dat <- as.data.frame(smooth.im)
+
+p.Ca <- ggplot(smooth.dat, aes(Ca.x, Ca.y)) +
+  geom_raster(aes(fill = Ca.value)) +
+  geom_india() +
+  scale_fill_viridis()
+
+p.Cu <- ggplot(smooth.dat, aes(Cu.x, Cu.y)) +
+  geom_raster(aes(fill = Cu.value)) +
+  geom_india() +
+  scale_fill_viridis()
+
+grid.arrange(p.Ca, p.Cu)
+```
+
+
+## Euclidean kriging
+
+
+The variogram model is Esponential.
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+
+```{r cost-surface}
+
+## Cost surface
+res <- 0.05
+prediction_grid <- raster(extent.india, resolution = res)
+cond_surf <- rasterize(shp.walls, prediction_grid, field = 0, background = 1)
+# plot(cond_surf)
+
+
+# ## Points exterior to all of the solid structures
+# cost_loc <- coordinates(cond_surf)
+# structure.coord.list <-
+#   lapply(shp.construcciones@polygons,
+#          function(x) coordinates(x@Polygons[[1]]))
+# outer.idx <- 
+#   apply(sapply(structure.coord.list,
+#                function(x) point.in.polygon(cost_loc[, 'x'],
+#                                             cost_loc[, 'y'],
+#                                             x[, 1],
+#                                             x[, 2]) == 0),
+#         1, all)
+# 
+# 
+# cond_surf[idx & !outer.idx] <- 0   # High friction == low "conductivity"
+# plot(cond_surf)
+
+```
+
+
+```{r obs-and-prediction-locations}
+obs.gd <- as.geodata(dataset.Ca.Cu[, -1], data.col=c('Ca', 'Cu'))
+loc <- coordinates(cond_surf)
+```
+
+
+```{r euclidean-kriging, include = FALSE}
+
+## compute euclidean (only) variogram
+vg.std.Ca <- variog(obs.gd, data = obs.gd$data[, 'Ca'])
+vg.std.Cu <- variog(obs.gd, data = obs.gd$data[, 'Cu'])
+
+## fitting variogram models
+vgmdl.std.Ca <- likfit(geodata = obs.gd,
+                       data = obs.gd$data[, 'Ca'],
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML")
+
+vgmdl.std.Cu <- likfit(geodata = obs.gd,
+                       data = obs.gd$data[, 'Cu'],
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML")
+
+## Fitted parameters
+par.tab <- data.frame(Euclidean_Ca = with(vgmdl.std.Ca,
+                                          c(beta,
+                                            nugget,
+                                            sigmasq,
+                                            kappa,
+                                            phi,
+                                            practicalRange)),
+                      Euclidean_Cu = with(vgmdl.std.Cu,
+                                          c(beta,
+                                            nugget,
+                                            sigmasq,
+                                            kappa,
+                                            phi,
+                                            practicalRange)),
+                      row.names = c("Intercept",
+                                    "Nugget",
+                                    "Partial sill",
+                                    "kappa",
+                                    "phi",
+                                    "Pract. range"))
+
+
+# Conventional Kriging, Euclidean distances
+KC.std.Ca = krige.control(obj.model = vgmdl.std.Ca)
+kriging.std.Ca <- krige.conv(obs.gd,
+                             data = obs.gd$data[, 'Ca'],
+                             locations = loc,
+                             krige = KC.std.Ca)
+
+KC.std.Cu = krige.control(obj.model = vgmdl.std.Cu)
+kriging.std.Cu <- krige.conv(obs.gd,
+                             data = obs.gd$data[, 'Cu'],
+                             locations = loc,
+                             krige = KC.std.Cu)
+
+```
+
+```{r euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+
+grid.arrange(
+  ggplot(vg.std.Ca) + geom_variogram(vgmdl.std.Ca) + xlab(NULL) + ylab('semivariance Ca'),
+  ggplot(vg.std.Cu) + geom_variogram(vgmdl.std.Cu) + ylab('semivariance Cu')
+)
+
+```
+
+
+```{r euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
+
+p.Ca <- ggplot(data.frame(loc, Prediction = kriging.std.Ca$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Cu <- ggplot(data.frame(loc, Prediction = kriging.std.Cu$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+grid.arrange(p.Ca, p.Cu)
+
+```
+
+
+
+## Cost-based kriging
+
+
+
+```{r cost-based-distances}
+
+ddm <- distmatGen(dataset.Ca.Cu[, c('x', 'y')], cond_surf)
+ddm$loc <- ddm$loc[!is.na(values(cond_surf)),]
+
+```
+
+Some cost-based maps, for verifications purposes.
+
+```{r some-cost-based-maps, fig.width = 10, fig.height = 7}
+## Cost-based maps to each observation
+cb.maps <-  cbind(loc,
+                  ddm$loc) %>%
+  as.data.frame() %>% 
+  gather("Observation", "Distance", -(x:y))
+
+idx <- c(4, 30, 43, 69)
+obs.idx <- cbind(dataset.Ca.Cu[idx, ],
+                 Observation = factor(levels(cb.maps$Observation)[idx],
+                                      levels = levels(cb.maps$Observation)))
+ggplot(filter(cb.maps, Observation %in% levels(cb.maps$Observation)[idx]), aes(x, y)) + 
+  geom_tile(aes(fill = Distance, color = Distance)) +
+  stat_contour(aes(z = Distance), color = 'lightgray') +
+  geom_point(data = obs.idx, col = 'red') +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  geom_point(data = obs.india, col = 'white', alpha = .5) +
+  coord_fixed() +
+  xlab('') + ylab('') +
+  geom_india() +
+  facet_wrap(~Observation)
+
+```
+
+
+```{r cost-based-kriging, include=FALSE}
+
+
+## compute cost-based empirical variogram
+vg.cst.Ca <- variog(obs.gd, data = obs.gd$data[, 'Ca'], dists.mat = ddm$obs)
+vg.cst.Cu <- variog(obs.gd, data = obs.gd$data[, 'Cu'], dists.mat = ddm$obs)
+
+## fitting variogram models
+vgmdl.cst.Ca <- likfit(geodata = obs.gd,
+                       data = obs.gd$data[, 'Ca'],
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML",
+                       dists.mat = ddm$obs)
+
+## Not really a nice fit
+hist(resid(vgmdl.cst.Ca))
+qqnorm(resid(vgmdl.cst.Ca))
+qqline(resid(vgmdl.cst.Ca))
+
+vgmdl.cst.Cu <- likfit(geodata = obs.gd,
+                       data = obs.gd$data[, 'Cu'],
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML",
+                       dists.mat = ddm$obs)
+
+## Fitted parameters
+par.tab <- cbind(par.tab,
+                 data.frame(Cost_Ca = with(vgmdl.cst.Ca,
+                                           c(beta,
+                                             nugget,
+                                             sigmasq,
+                                             kappa,
+                                             phi,
+                                             practicalRange)),
+                            Cost_Cu = with(vgmdl.cst.Cu,
+                                           c(beta,
+                                             nugget,
+                                             sigmasq,
+                                             kappa,
+                                             phi,
+                                             practicalRange))))
+
+
+# Conventional Kriging, Euclidean distances
+KC.cst.Ca = krige.control(obj.model = vgmdl.cst.Ca)
+kriging.cst.Ca <- krige.conv(obs.gd,
+                             data = obs.gd$data[, 'Ca'],
+                             locations = loc,
+                             krige = KC.cst.Ca,
+                             dd.dists.mat = ddm$obs,
+                             dl.dists.mat = ddm$loc)
+
+KC.cst.Cu = krige.control(obj.model = vgmdl.cst.Cu)
+kriging.cst.Cu <- krige.conv(obs.gd,
+                             data = obs.gd$data[, 'Cu'],
+                             locations = loc,
+                             krige = KC.cst.Cu,
+                             dd.dists.mat = ddm$obs,
+                             dl.dists.mat = ddm$loc)
+
+```
+
+
+
+```{r cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical cost-based variogram and fitted model.'}
+
+grid.arrange(
+  ggplot(vg.cst.Ca) + geom_variogram(vgmdl.cst.Ca) + xlab(NULL) + ylab('semivariance Ca'),
+  ggplot(vg.cst.Cu) + geom_variogram(vgmdl.cst.Cu) + ylab('semivariance Cu')
+)
+
+```
+
+
+```{r cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
+
+p.Ca <- ggplot(data.frame(loc, Prediction_Ca = kriging.cst.Ca$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction_Ca, colour = Prediction_Ca)) +
+  stat_contour(aes(z = Prediction_Ca), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Cu <- ggplot(data.frame(loc, Prediction_Cu = kriging.cst.Cu$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction_Cu, colour = Prediction_Cu)) +
+  stat_contour(aes(z = Prediction_Cu), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+grid.arrange(p.Ca, p.Cu)
+
+```
+
+
+
+## Comparison of method outcomes
+
+```{r parameter-table}
+kable(par.tab[, c(1,3,2,4)], digits = 2)
+```
+
+
+```{r compare-variogram-plot, fig.width = 6, fig.height = 8, fig.cap = 'Empirical variogram and fitted models by method and variable.'}
+
+vg.both <- rbind(data.frame(vg.std.Ca[1:3],
+                            variable = 'Ca',
+                            method = 'Euclidean'),
+                 data.frame(vg.cst.Ca[1:3],
+                            variable = 'Ca',
+                            method = 'Cost-based'),
+                 data.frame(vg.std.Cu[1:3],
+                            variable = 'Cu',
+                            method = 'Euclidean'),
+                 data.frame(vg.cst.Cu[1:3],
+                            variable = 'Cu',
+                            method = 'Cost-based'))
+
+names(vg.both) <- c('distance', 'semivariance', 'n', 'variable', 'method')
+
+p.Ca <- ggplot(filter(vg.both, variable == 'Ca'),
+               aes(distance, semivariance)) +
+  geom_point(aes(size = n)) + 
+  expand_limits(y=0) +
+  geom_variogram(vgmdl.std.Ca, variable = 'Ca', method = 'Euclidean') +
+  geom_variogram(vgmdl.cst.Ca, variable = 'Ca', method = 'Cost-based') +
+  facet_grid(method ~ variable) +
+  theme_bw()
+
+p.Cu <- ggplot(filter(vg.both, variable == 'Cu'),
+               aes(distance, semivariance)) +
+  geom_point(aes(size = n)) + 
+  expand_limits(y=0) +
+  geom_variogram(vgmdl.std.Cu, variable = 'Cu', method = 'Euclidean') +
+  geom_variogram(vgmdl.cst.Cu, variable = 'Cu', method = 'Cost-based') +
+  facet_grid(method ~ variable) +
+  theme_bw()
+
+grid.arrange(p.Ca, p.Cu)
+
+```
+
+
+
+
+```{r compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+res.df.Ca <- data.frame(loc, 
+                        method = c(rep('Classical - Ca', nrow(loc)),
+                                   rep('Cost-based - Ca', nrow(loc)),
+                                   rep('Difference - Ca', nrow(loc))),
+                        Prediction_Ca = c(kriging.std.Ca$predict,
+                                          kriging.cst.Ca$predict,
+                                          kriging.std.Ca$predict-kriging.cst.Ca$predict))
+
+p.Ca <- 
+  ggplot(filter(res.df.Ca, method != 'Difference - Ca'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction_Ca, colour = Prediction_Ca)) +
+  stat_contour(aes(z = Prediction_Ca), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method) 
+
+
+res.df.Cu <- data.frame(loc, 
+                        method = c(rep('Classical - Cu', nrow(loc)),
+                                   rep('Cost-based - Cu', nrow(loc)),
+                                   rep('Difference - Cu', nrow(loc))),
+                        Prediction_Cu = c(kriging.std.Cu$predict,
+                                          kriging.cst.Cu$predict,
+                                          kriging.std.Cu$predict-kriging.cst.Cu$predict))
+
+p.Cu <- 
+  ggplot(filter(res.df.Cu, method != 'Difference - Cu'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction_Cu, colour = Prediction_Cu)) +
+  stat_contour(aes(z = Prediction_Cu), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method) 
+
+grid.arrange(p.Ca, p.Cu)
+```
+
+
+```{r cost-based-vs-euclidean-prediction, fig.height = 6}
+
+p.Ca <- data.frame(Euclidean  = kriging.std.Ca$predict,
+                   Cost_based = kriging.cst.Ca$predict,
+                   variable   = 'Ca') %>% 
+  ggplot(aes(Euclidean, Cost_based)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  facet_grid(~variable) + 
+  theme_bw()
+
+
+p.Cu <- data.frame(Euclidean  = kriging.std.Cu$predict,
+                   Cost_based = kriging.cst.Cu$predict,
+                   variable   = 'Cu') %>% 
+  ggplot(aes(Euclidean, Cost_based)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  facet_grid(~variable) + 
+  theme_bw()
+
+grid.arrange(p.Ca, p.Cu)
+
+```
+
+In the scatter plot, the horizontal patterns correspond to predictions on observed values.
+Otherwise, the differences are negligeable.
+
+```{r map-kriging-difference, fig.width=10, fig.height=12, fig.cap='Difference between the cost-based prediction and the Euclidean prediction'}
+
+pred.dif.Ca <- 
+  ggplot(filter(res.df.Ca, method == 'Difference - Ca'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction_Ca, colour = Prediction_Ca)) +
+  stat_contour(aes(z = Prediction_Ca), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method)
+
+pred.dif.Cu <- 
+  ggplot(filter(res.df.Cu, method == 'Difference - Cu'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction_Cu, colour = Prediction_Cu)) +
+  stat_contour(aes(z = Prediction_Cu), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method)
+
+grid.arrange(pred.dif.Ca, pred.dif.Cu)
+# grid.arrange(pred.comp, pred.dif)
+```
+
