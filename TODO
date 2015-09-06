@@ -1,0 +1,14 @@
+- Comparison of approaches
+
+  - leave-one-out cross validation with 95% CI and frequency of observed values within intervals
+
+  - maps of prediction error
+
+- Optional additional approach: MDS transformation of cost-based distances (Murphy et al. 2015)
+
+- Box-Cox transformation of variables? (use profile likelihood to build a CI for \lambda, as in Murphy et al., 2015)
+
+- Fix nugget to 0? (i.e. as in Murphy et al., 2015) They argue that this gives better fitting.
+
+- Produce maps with scale and north-arrow
+
