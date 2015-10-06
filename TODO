@@ -3,12 +3,17 @@
   - leave-one-out cross validation with 95% CI and frequency of observed values within intervals
 
   - maps of prediction error
+    - *Done for India*
 
 - Optional additional approach: MDS transformation of cost-based distances (Murphy et al. 2015)
 
 - Box-Cox transformation of variables? (use profile likelihood to build a CI for \lambda, as in Murphy et al., 2015)
+  - For Calcium data at India, lambda_est = 0.82 and the profile likelihood CI includes 1.
+  - It doesn't look like a great transform. I don't think it will change much.
+  - The (shifted) residuals of the kriging models yield yet larger intervals
 
 - Fix nugget to 0? (i.e. as in Murphy et al., 2015) They argue that this gives better fitting.
+  - In the observations of Cu from India, the maximum-likelihood variogram degenerates to variance and range of zero.
 
 - Produce maps with scale and north-arrow
 
