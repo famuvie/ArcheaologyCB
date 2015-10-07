@@ -488,6 +488,36 @@ In the main area, the prediction errors are practically the same with both appro
 Behind the walls, the Euclidean prediction error is unrealistically low.
 
 
+## Leave-one-out Cross Validation (LOOCV)
+
+```{r Ca-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
+loocvdat <- obs.gd
+loocvdat$data <- loocvdat$data[, 'Ca']
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+sink()   # Why I need this?
+
+# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+
+pred_error <- data.frame(
+  std = loocvdat$data - res[, 1],
+  cst = loocvdat$data - res[, 2]
+)
+
+ggplot(pred_error, aes(std, cst)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1)
+
+rmse <- function(x) sqrt(mean(x**2))
+
+pred_error %>% 
+  gather(method, error) %>% 
+  group_by(method) %>% 
+  summarise(rmse(error)) %>% 
+  kable(digits = 2)
+
+```
+
+
 \clearpage
 
 # Analysis of Copper
