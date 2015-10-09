@@ -28,10 +28,10 @@ opts_chunk$set(echo       = FALSE,
                fig.width  = 4,
                fig.height = 4,
                fig.caption = TRUE,
-               cache      = FALSE)
+               cache      = TRUE)
 ```
 
-```{r setup-ProjectTemplate, include = FALSE}
+```{r setup-ProjectTemplate, include = FALSE, cache = FALSE}
 ## This automatically loads packages, data and helper functions
 ## and perform munging operations as defined for the project
 library(ProjectTemplate)
@@ -39,7 +39,7 @@ load.project()
 ```
 
 
-```{r setup-ggplot}
+```{r setup-ggplot, cache = FALSE}
 # theme_set(theme_bw())
 theme_set(theme_tufte())
 
@@ -49,7 +49,7 @@ theme_set(theme_tufte())
 geom_india <- function()
   list(geom_polygon(aes(long, lat, group = group),
                     data = shp.walls),
-  geom_point(aes(x, y), data = dataset.Ca.Cu, alpha = 0.5, size = 1),
+  geom_point(aes(x, y), data = dataset, alpha = 0.5, size = 1),
   coord_equal(),
   labs(x = NULL, y = NULL))
 
@@ -60,19 +60,19 @@ Here we compare the outcome of a classical kriging against a cost-based kriging 
 
 # Data description
 
-```{r data-summary}
-str(dataset.Ca.Cu)
-summary(dataset.Ca.Cu)
+```{r data-summary, fig.cap = 'Histograms of measured variables.', fig.width = 5, fig.height = 7}
+str(dataset)
+summary(dataset)
 
 ggplot(obs.india, aes(value)) +
   geom_histogram() +
-  facet_wrap(~ variable, scales = 'free_x') 
+  facet_wrap(~ variable, scales = 'free_x', ncol = 2) 
 ```
 
 
 Figures 1 and 2 display the raw data, and an exploratory smoothed surface.
 
-```{r raw-data, fig.cap = 'Measurement locations and observed values'}
+```{r raw-data, fig.cap = 'Measurement locations and observed values', fig.width = 8, fig.height = 10}
 # plot(shp.area.trabajo)
 # plot(shp.construcciones)
 
@@ -80,25 +80,31 @@ Figures 1 and 2 display the raw data, and an exploratory smoothed surface.
 # structures <- fortify(shp.construcciones, region = 'id')
 # structures <- join(structures, shp.construcciones@data, by = 'id')
 
+plot_raw_variable <- function(var) {
+  p <- ggplot(shp.walls, aes(long, lat)) +
+    geom_india() +
+    scale_color_viridis() 
   
-p.Ca <- ggplot(shp.walls, aes(long, lat)) +
-  geom_india() +
-  geom_point(aes(x, y, color = Ca), data = dataset.Ca.Cu, size = 5, shape = 15) +
-  scale_color_viridis() 
+  gp <- paste('geom_point(aes(x, y, color =', 
+              parse(text= var), 
+              '), data = dataset, size = 5, shape = 15)')
 
-p.Cu <- ggplot(shp.walls, aes(long, lat)) +
-  geom_india() +
-  geom_point(aes(x, y, color = Cu), data = dataset.Ca.Cu, size = 5, shape = 15) +
-  scale_color_viridis()
+  p + eval(parse(text = gp))
+}
 
-grid.arrange(p.Ca, p.Cu)
+p.list <- lapply(
+  levels(obs.india$variable),
+  plot_raw_variable
+)
+
+do.call('grid.arrange', c(p.list, list(ncol = 2)))
 ```
 
 
 
-```{r smoothed-data, fig.cap = 'Exploratory kernel smoothing of the measurements'}
+```{r smoothed-data, fig.cap = 'Exploratory kernel smoothing of the measurements', fig.width = 8, fig.height = 10}
 ## Create a `spatstat`'s Point Pattern object from the coordinates.
-dat.ppp <- as.ppp(dataset.Ca.Cu[, -1],
+dat.ppp <- as.ppp(dataset[, -(1:3)],
                   owin(xrange = extent.india[1:2],
                        yrange = extent.india[3:4]))
 # plot(dat.ppp)
@@ -111,17 +117,23 @@ smooth.im <- Smooth(dat.ppp, dimyx = dimyx, sigma = 1)
 # plot(smooth.im)
 smooth.dat <- as.data.frame(smooth.im)
 
-p.Ca <- ggplot(smooth.dat, aes(Ca.x, Ca.y)) +
-  geom_raster(aes(fill = Ca.value)) +
-  geom_india() +
-  scale_fill_viridis()
+plot_smoothed_variable <- function(var) {
+  pt <- paste0('ggplot(smooth.dat, aes(', var, '.x, ', var, '.y))') 
+  rt <- paste0('geom_raster(aes(fill = ', var, '.value))')
+  
+  eval(parse(text = pt)) + 
+    eval(parse(text = rt)) +
+    geom_india() +
+    scale_fill_viridis() 
+}
 
-p.Cu <- ggplot(smooth.dat, aes(Cu.x, Cu.y)) +
-  geom_raster(aes(fill = Cu.value)) +
-  geom_india() +
-  scale_fill_viridis()
+p.list <- lapply(
+  levels(obs.india$variable),
+  plot_smoothed_variable
+)
 
-grid.arrange(p.Ca, p.Cu)
+do.call('grid.arrange', c(p.list, list(ncol = 2)))
+
 ```
 
 
@@ -159,15 +171,24 @@ cond_surf <- rasterize(shp.walls, prediction_grid, field = 0, background = 1)
 
 
 ```{r setup-obs-and-prediction-locations}
-obs.gd <- as.geodata(dataset.Ca.Cu[, -1], data.col=c('Ca', 'Cu'))
+obs.gd <- as.geodata(dataset[, -(1:3)], 
+                     data.col=levels(obs.india$variable))
 loc <- coordinates(cond_surf)
 ```
 
 
 ```{r setup-cost-based-distances}
 
-ddm <- distmatGen(dataset.Ca.Cu[, c('x', 'y')], cond_surf)
+ddm <- distmatGen(dataset[, c('x', 'y')], cond_surf)
 ddm$loc <- ddm$loc[!is.na(values(cond_surf)),]
+
+## Remove prediction locations infinitely far from all points
+## This is an artifact of the rasterization
+idx <- which(apply(ddm$loc, 1,
+             function(x) all(is.infinite(x))))
+
+loc <- loc[-idx, ]
+ddm$loc <- ddm$loc[-idx, ]
 
 ```
 
@@ -181,12 +202,12 @@ cb.maps <-  cbind(loc,
   gather("Observation", "Distance", -(x:y))
 
 idx <- c(4, 30, 43, 69)
-obs.idx <- cbind(dataset.Ca.Cu[idx, ],
+obs.idx <- cbind(dataset[idx, ],
                  Observation = factor(levels(cb.maps$Observation)[idx],
                                       levels = levels(cb.maps$Observation)))
 ggplot(filter(cb.maps, Observation %in% levels(cb.maps$Observation)[idx]), aes(x, y)) + 
   geom_tile(aes(fill = Distance, color = Distance)) +
-  stat_contour(aes(z = Distance), color = 'lightgray') +
+  stat_contour(aes(z = Distance), binwidth = 1, color = 'lightgray') +
   geom_point(data = obs.idx, col = 'red') +
   scale_fill_viridis() +
   scale_color_viridis() +
@@ -207,6 +228,10 @@ ggplot(filter(cb.maps, Observation %in% levels(cb.maps$Observation)[idx]), aes(x
 
 # Analysis of Calcium
 
+```{r Ca-fix-variable}
+variable <- obs.gd$data[, 'Ca']
+```
+
 
 ## Euclidean kriging
 
@@ -219,11 +244,11 @@ We choose to estimate the nugget effect, which may account for measurement error
 ```{r Ca-euclidean-kriging, include = FALSE}
 
 ## compute euclidean (only) variogram
-vg.std.Ca <- variog(obs.gd, data = obs.gd$data[, 'Ca'])
+vg.std.Ca <- variog(obs.gd, data = variable)
 
 ## fitting variogram models
 vgmdl.std.Ca <- likfit(geodata = obs.gd,
-                       data = obs.gd$data[, 'Ca'],
+                       data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -253,7 +278,7 @@ par.tab <- data.frame(
 # Conventional Kriging, Euclidean distances
 KC.std.Ca = krige.control(obj.model = vgmdl.std.Ca)
 kriging.std.Ca <- krige.conv(obs.gd,
-                             data = obs.gd$data[, 'Ca'],
+                             data = variable,
                              locations = loc,
                              krige = KC.std.Ca)
 
@@ -291,11 +316,11 @@ p.Ca
 
 
 ## compute cost-based empirical variogram
-vg.cst.Ca <- variog(obs.gd, data = obs.gd$data[, 'Ca'], dists.mat = ddm$obs)
+vg.cst.Ca <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
 
 ## fitting variogram models
 vgmdl.cst.Ca <- likfit(geodata = obs.gd,
-                       data = obs.gd$data[, 'Ca'],
+                       data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -320,7 +345,7 @@ par.tab <- cbind(par.tab,
 # Conventional Kriging, Euclidean distances
 KC.cst.Ca = krige.control(obj.model = vgmdl.cst.Ca)
 kriging.cst.Ca <- krige.conv(obs.gd,
-                             data = obs.gd$data[, 'Ca'],
+                             data = variable,
                              locations = loc,
                              krige = KC.cst.Ca,
                              dd.dists.mat = ddm$obs,
@@ -415,9 +440,11 @@ p.Ca
 
 ```{r Ca-cost-based-vs-euclidean-prediction, fig.cap = 'Pointwise comparison of predictions by method.'}
 
+## Only represent a random sample of all 30k prediction points
 p.Ca <- data.frame(Euclidean  = kriging.std.Ca$predict,
                    Cost_based = kriging.cst.Ca$predict,
                    variable   = 'Ca') %>% 
+  sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
   geom_abline(int = 0, sl = 1, col = 'darkgray') +
@@ -492,7 +519,7 @@ Behind the walls, the Euclidean prediction error is unrealistically low.
 
 ```{r Ca-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
 loocvdat <- obs.gd
-loocvdat$data <- loocvdat$data[, 'Ca']
+loocvdat$data <- variable
 res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
 sink()   # Why I need this?
 
@@ -523,6 +550,12 @@ pred_error %>%
 # Analysis of Copper
 
 
+
+```{r Cu-fix-variable}
+variable <- obs.gd$data[, 'Cu']
+```
+
+
 ## Euclidean kriging
 
 
@@ -533,11 +566,11 @@ We choose to estimate the nugget effect, which may account for measurement error
 ```{r Cu-euclidean-kriging, include = FALSE}
 
 ## compute euclidean (only) variogram
-vg.std.Cu <- variog(obs.gd, data = obs.gd$data[, 'Cu'])
+vg.std.Cu <- variog(obs.gd, data = variable)
 
 ## fitting variogram models
 vgmdl.std.Cu <- likfit(geodata = obs.gd,
-                       data = obs.gd$data[, 'Cu'],
+                       data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -564,7 +597,7 @@ par.tab <- data.frame(Euclidean = with(vgmdl.std.Cu,
 # Conventional Kriging, Euclidean distances
 KC.std.Cu = krige.control(obj.model = vgmdl.std.Cu)
 kriging.std.Cu <- krige.conv(obs.gd,
-                             data = obs.gd$data[, 'Cu'],
+                             data = variable,
                              locations = loc,
                              krige = KC.std.Cu)
 
@@ -601,11 +634,11 @@ p.Cu
 
 
 ## compute cost-based empirical variogram
-vg.cst.Cu <- variog(obs.gd, data = obs.gd$data[, 'Cu'], dists.mat = ddm$obs)
+vg.cst.Cu <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
 
 ## fitting variogram models
 vgmdl.cst.Cu <- likfit(geodata = obs.gd,
-                       data = obs.gd$data[, 'Cu'],
+                       data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -629,7 +662,7 @@ par.tab <- cbind(par.tab,
 # Conventional Kriging, Euclidean distances
 KC.cst.Cu = krige.control(obj.model = vgmdl.cst.Cu)
 kriging.cst.Cu <- krige.conv(obs.gd,
-                             data = obs.gd$data[, 'Cu'],
+                             data = variable,
                              locations = loc,
                              krige = KC.cst.Cu,
                              dd.dists.mat = ddm$obs,
@@ -726,6 +759,7 @@ p.Cu
 p.Cu <- data.frame(Euclidean  = kriging.std.Cu$predict,
                    Cost_based = kriging.cst.Cu$predict,
                    variable   = 'Cu') %>% 
+  sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
   geom_abline(int = 0, sl = 1, col = 'darkgray') +
@@ -796,23 +830,1376 @@ Behind the walls, the Euclidean prediction error is unrealistically low.
 
 
 
+
+## Leave-one-out Cross Validation (LOOCV)
+
+```{r Cu-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
+loocvdat <- obs.gd
+loocvdat$data <- variable
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+sink()   # Why I need this?
+
+# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+
+pred_error <- data.frame(
+  std = loocvdat$data - res[, 1],
+  cst = loocvdat$data - res[, 2]
+)
+
+ggplot(pred_error, aes(std, cst)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1)
+
+rmse <- function(x) sqrt(mean(x**2))
+
+pred_error %>% 
+  gather(method, error) %>% 
+  group_by(method) %>% 
+  summarise(rmse(error)) %>% 
+  kable(digits = 2)
+
+```
+
+
+
+
+
+\clearpage
+
+# Analysis of Ferrum
+
+```{r Fe-fix-variable}
+variable <- obs.gd$data[, 'Fe']
+```
+
+
+## Euclidean kriging
+
+
+The variogram model is Exponential.
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+
+
+```{r Fe-euclidean-kriging, include = FALSE}
+
+## compute euclidean (only) variogram
+vg.std.Fe <- variog(obs.gd, data = variable)
+
+## fitting variogram models
+vgmdl.std.Fe <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML")
+
+## Fitted parameters
+par.tab <- data.frame(
+  Euclidean = with(vgmdl.std.Fe,
+                   c(beta,
+                     nugget,
+                     sigmasq,
+                     # kappa,
+                     phi,
+                     practicalRange,
+                     loglik)),
+  row.names = c("Intercept",
+                "Nugget",
+                "Partial sill",
+                # "kappa",
+                "phi",
+                "Pract. range",
+                "Log-likelihood"))
+
+
+# Conventional Kriging, Euclidean distances
+KC.std.Fe = krige.control(obj.model = vgmdl.std.Fe)
+kriging.std.Fe <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.std.Fe)
+
+```
+
+```{r Fe-euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+
+ggplot(vg.std.Fe) + 
+  geom_variogram(vgmdl.std.Fe) + 
+  ylab('semivariance Fe')
+
+```
+
+
+```{r Fe-euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
+
+p.Fe <- ggplot(data.frame(loc, Prediction = kriging.std.Fe$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Fe
+
+```
+
+
+
+## Cost-based kriging
+
+
+
+```{r Fe-cost-based-kriging, include=FALSE}
+
+
+## compute cost-based empirical variogram
+vg.cst.Fe <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+
+## fitting variogram models
+vgmdl.cst.Fe <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML",
+                       dists.mat = ddm$obs)
+
+## Fitted parameters
+par.tab <- cbind(par.tab,
+                 data.frame(
+                   Cost_based = with(vgmdl.cst.Fe,
+                                     c(beta,
+                                       nugget,
+                                       sigmasq,
+                                       # kappa,
+                                       phi,
+                                       practicalRange,
+                                       loglik))))
+
+
+# Conventional Kriging, Euclidean distances
+KC.cst.Fe = krige.control(obj.model = vgmdl.cst.Fe)
+kriging.cst.Fe <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.cst.Fe,
+                             dd.dists.mat = ddm$obs,
+                             dl.dists.mat = ddm$loc)
+
+```
+
+
+
+```{r Fe-cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical cost-based variogram and fitted model.'}
+
+ggplot(vg.cst.Fe) +
+  geom_variogram(vgmdl.cst.Fe) +
+  ylab('semivariance Fe')
+
+```
+
+
+```{r Fe-cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
+
+p.Fe <- ggplot(data.frame(loc, Prediction = kriging.cst.Fe$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Fe
+
+```
+
+
+
+## Comparison of method outcomes
+
+```{r Fe-parameter-table}
+kable(par.tab, digits = 2)
+```
+
+
+```{r Fe-compare-variogram-plot, fig.width = 6, fig.height = 4, fig.cap = 'Empirical variogram and fitted models by method for Ferrum.'}
+
+vg.both <- rbind(data.frame(vg.std.Fe[1:3],
+                            variable = 'Fe',
+                            method = 'Euclidean'),
+                 data.frame(vg.cst.Fe[1:3],
+                            variable = 'Fe',
+                            method = 'Cost-based'))
+
+names(vg.both) <- c('distance', 'semivariance', 'n', 'variable', 'method')
+
+p.Fe <- ggplot(filter(vg.both, variable == 'Fe'),
+               aes(distance, semivariance)) +
+  geom_point(aes(size = n)) + 
+  expand_limits(y=0) +
+  geom_variogram(vgmdl.std.Fe, variable = 'Fe', method = 'Euclidean') +
+  geom_variogram(vgmdl.cst.Fe, variable = 'Fe', method = 'Cost-based') +
+  facet_grid(method ~ .) +
+  theme_bw()
+
+p.Fe
+
+```
+
+
+
+
+```{r Fe-compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+res.df.Fe <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std.Fe$predict,
+                                          kriging.cst.Fe$predict,
+                                          kriging.std.Fe$predict-kriging.cst.Fe$predict))
+
+p.Fe <- 
+  ggplot(filter(res.df.Fe, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .05, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method, ncol = 1) 
+
+
+p.Fe
+```
+
+
+```{r Fe-cost-based-vs-euclidean-prediction, fig.cap = 'Pointwise comparison of predictions by method.'}
+
+p.Fe <- data.frame(Euclidean  = kriging.std.Fe$predict,
+                   Cost_based = kriging.cst.Fe$predict) %>% 
+  sample_n(5e3) %>% 
+  ggplot(aes(Euclidean, Cost_based)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  theme_bw()
+
+
+p.Fe
+
+```
+
+In the scatter plot, the horizontal patterns correspond to predictions on observed values.
+Otherwise, the differences are negligeable.
+
+```{r Fe-map-kriging-difference, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based predictions.'}
+
+pred.dif.Fe <- 
+  ggplot(filter(res.df.Fe, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .05, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\npredictions') +
+  scale_color_viridis(name = 'Difference in\npredictions')
+
+pred.dif.Fe
+# grid.arrange(pred.comp, pred.dif)
+```
+
+
+
+
+
+```{r Fe-compare-kriging-errors, fig.width=10, fig.height=7, fig.cap = 'Comparison of prediction error by method.'}
+
+res.var.Fe <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std.Fe$krige.var,
+                                          kriging.cst.Fe$krige.var,
+                                          kriging.std.Fe$krige.var-kriging.cst.Fe$krige.var))
+
+ggplot(filter(res.var.Fe, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .05, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Kriging\nvariance') +
+  scale_color_viridis(name = 'Kriging\nvariance') +
+  facet_wrap(~method, ncol = 1) 
+
+```
+
+
+```{r Fe-map-kriging-difference-errors, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based prediction errors'}
+
+ggplot(filter(res.var.Fe, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .05, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\nKriging variance') +
+  scale_color_viridis(name = 'Difference in\nKriging variance')
+```
+
+Near the observations, the cost-based approach has a larger prediction error due to its increased estimation of the nugget (i.e. short-range variance).
+In the main area, the prediction errors are practically the same with both approaches.
+Behind the walls, the Euclidean prediction error is unrealistically low.
+
+
+## Leave-one-out Cross Validation (LOOCV)
+
+```{r Fe-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
+loocvdat <- obs.gd
+loocvdat$data <- variable
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+sink()   # Why I need this?
+
+# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+
+pred_error <- data.frame(
+  std = loocvdat$data - res[, 1],
+  cst = loocvdat$data - res[, 2]
+)
+
+ggplot(pred_error, aes(std, cst)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1)
+
+rmse <- function(x) sqrt(mean(x**2))
+
+pred_error %>% 
+  gather(method, error) %>% 
+  group_by(method) %>% 
+  summarise(rmse(error)) %>% 
+  kable(digits = 2)
+
+```
+
+
+
+
+
+
+\clearpage
+
+# Analysis of Potasium
+
+```{r K-fix-variable}
+variable <- obs.gd$data[, 'K']
+```
+
+
+## Euclidean kriging
+
+
+The variogram model is Exponential.
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+
+
+```{r K-euclidean-kriging, include = FALSE}
+
+## compute euclidean (only) variogram
+vg.std <- variog(obs.gd, data = variable)
+
+## fitting variogram models
+vgmdl.std <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML")
+
+## Fitted parameters
+par.tab <- data.frame(
+  Euclidean = with(vgmdl.std,
+                   c(beta,
+                     nugget,
+                     sigmasq,
+                     # kappa,
+                     phi,
+                     practicalRange,
+                     loglik)),
+  row.names = c("Intercept",
+                "Nugget",
+                "Partial sill",
+                # "kappa",
+                "phi",
+                "Pract. range",
+                "Log-likelihood"))
+
+
+# Conventional Kriging, Euclidean distances
+KC.std = krige.control(obj.model = vgmdl.std)
+kriging.std <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.std)
+
+```
+
+```{r K-euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+
+ggplot(vg.std) + 
+  geom_variogram(vgmdl.std) + 
+  ylab('semivariance K')
+
+```
+
+
+```{r K-euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
+
+p <- ggplot(data.frame(loc, Prediction = kriging.std$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p
+
+```
+
+
+
+## Cost-based kriging
+
+
+
+```{r K-cost-based-kriging, include=FALSE}
+
+
+## compute cost-based empirical variogram
+vg.cst <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+
+## fitting variogram models
+vgmdl.cst <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML",
+                       dists.mat = ddm$obs)
+
+## Fitted parameters
+par.tab <- cbind(par.tab,
+                 data.frame(
+                   Cost_based = with(vgmdl.cst,
+                                     c(beta,
+                                       nugget,
+                                       sigmasq,
+                                       # kappa,
+                                       phi,
+                                       practicalRange,
+                                       loglik))))
+
+
+# Conventional Kriging, Euclidean distances
+KC.cst = krige.control(obj.model = vgmdl.cst)
+kriging.cst <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.cst,
+                             dd.dists.mat = ddm$obs,
+                             dl.dists.mat = ddm$loc)
+
+```
+
+
+
+```{r K-cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical cost-based variogram and fitted model.'}
+
+ggplot(vg.cst) +
+  geom_variogram(vgmdl.cst) +
+  ylab('semivariance K')
+
+```
+
+
+```{r K-cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
+
+p <- ggplot(data.frame(loc, Prediction = kriging.cst$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p
+
+```
+
+
+
+## Comparison of method outcomes
+
+```{r K-parameter-table}
+kable(par.tab, digits = 2)
+```
+
+
+```{r K-compare-variogram-plot, fig.width = 6, fig.height = 4, fig.cap = 'Empirical variogram and fitted models by method for Potasium.'}
+
+vg.both <- rbind(data.frame(vg.std[1:3],
+                            variable = 'K',
+                            method = 'Euclidean'),
+                 data.frame(vg.cst[1:3],
+                            variable = 'K',
+                            method = 'Cost-based'))
+
+names(vg.both) <- c('distance', 'semivariance', 'n', 'variable', 'method')
+
+p <- ggplot(filter(vg.both, variable == 'K'),
+               aes(distance, semivariance)) +
+  geom_point(aes(size = n)) + 
+  expand_limits(y=0) +
+  geom_variogram(vgmdl.std, variable = 'K', method = 'Euclidean') +
+  geom_variogram(vgmdl.cst, variable = 'K', method = 'Cost-based') +
+  facet_grid(method ~ .) +
+  theme_bw()
+
+p
+
+```
+
+
+
+
+```{r K-compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+res.df <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std$predict,
+                                          kriging.cst$predict,
+                                          kriging.std$predict-kriging.cst$predict))
+
+p <- 
+  ggplot(filter(res.df, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .01, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method, ncol = 1) 
+
+
+p
+```
+
+
+```{r K-cost-based-vs-euclidean-prediction, fig.cap = 'Pointwise comparison of predictions by method.'}
+
+p <- data.frame(Euclidean  = kriging.std$predict,
+                   Cost_based = kriging.cst$predict) %>% 
+  sample_n(5e3) %>% 
+  ggplot(aes(Euclidean, Cost_based)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  theme_bw()
+
+
+p
+
+```
+
+In the scatter plot, the horizontal patterns correspond to predictions on observed values.
+Otherwise, the differences are negligeable.
+
+```{r K-map-kriging-difference, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based predictions.'}
+
+pred.dif <- 
+  ggplot(filter(res.df, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .01, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\npredictions') +
+  scale_color_viridis(name = 'Difference in\npredictions')
+
+pred.dif
+# grid.arrange(pred.comp, pred.dif)
+```
+
+
+
+
+
+```{r K-compare-kriging-errors, fig.width=10, fig.height=7, fig.cap = 'Comparison of prediction error by method.'}
+
+res.var <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std$krige.var,
+                                          kriging.cst$krige.var,
+                                          kriging.std$krige.var-kriging.cst$krige.var))
+
+ggplot(filter(res.var, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .01, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Kriging\nvariance') +
+  scale_color_viridis(name = 'Kriging\nvariance') +
+  facet_wrap(~method, ncol = 1) 
+
+```
+
+
+```{r K-map-kriging-difference-errors, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based prediction errors'}
+
+ggplot(filter(res.var, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .01, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\nKriging variance') +
+  scale_color_viridis(name = 'Difference in\nKriging variance')
+```
+
+Near the observations, the cost-based approach has a larger prediction error due to its increased estimation of the nugget (i.e. short-range variance).
+In the main area, the prediction errors are practically the same with both approaches.
+Behind the walls, the Euclidean prediction error is unrealistically low.
+
+
+## Leave-one-out Cross Validation (LOOCV)
+
+```{r K-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
+loocvdat <- obs.gd
+loocvdat$data <- variable
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+sink()   # Why I need this?
+
+# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+
+pred_error <- data.frame(
+  std = loocvdat$data - res[, 1],
+  cst = loocvdat$data - res[, 2]
+)
+
+ggplot(pred_error, aes(std, cst)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1)
+
+rmse <- function(x) sqrt(mean(x**2))
+
+pred_error %>% 
+  gather(method, error) %>% 
+  group_by(method) %>% 
+  summarise(rmse(error)) %>% 
+  kable(digits = 2)
+
+```
+
+
+
+
+
+
+
+\clearpage
+
+# Analysis of Magnesium
+
+```{r Mg-fix-variable}
+variable <- obs.gd$data[, 'Mg']
+```
+
+
+## Euclidean kriging
+
+
+The variogram model is Exponential.
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+
+
+```{r Mg-euclidean-kriging, include = FALSE}
+
+## compute euclidean (only) variogram
+vg.std.Mg <- variog(obs.gd, data = variable)
+
+## fitting variogram models
+vgmdl.std.Mg <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML")
+
+## Fitted parameters
+par.tab <- data.frame(
+  Euclidean = with(vgmdl.std.Mg,
+                   c(beta,
+                     nugget,
+                     sigmasq,
+                     # kappa,
+                     phi,
+                     practicalRange,
+                     loglik)),
+  row.names = c("Intercept",
+                "Nugget",
+                "Partial sill",
+                # "kappa",
+                "phi",
+                "Pract. range",
+                "Log-likelihood"))
+
+
+# Conventional Kriging, Euclidean distances
+KC.std.Mg = krige.control(obj.model = vgmdl.std.Mg)
+kriging.std.Mg <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.std.Mg)
+
+```
+
+```{r Mg-euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+
+ggplot(vg.std.Mg) + 
+  geom_variogram(vgmdl.std.Mg) + 
+  ylab('semivariance Mg')
+
+```
+
+
+```{r Mg-euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
+
+p.Mg <- ggplot(data.frame(loc, Prediction = kriging.std.Mg$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Mg
+
+```
+
+
+
+## Cost-based kriging
+
+
+
+```{r Mg-cost-based-kriging, include=FALSE}
+
+
+## compute cost-based empirical variogram
+vg.cst.Mg <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+
+## fitting variogram models
+vgmdl.cst.Mg <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML",
+                       dists.mat = ddm$obs)
+
+## Fitted parameters
+par.tab <- cbind(par.tab,
+                 data.frame(
+                   Cost_based = with(vgmdl.cst.Mg,
+                                     c(beta,
+                                       nugget,
+                                       sigmasq,
+                                       # kappa,
+                                       phi,
+                                       practicalRange,
+                                       loglik))))
+
+
+# Conventional Kriging, Euclidean distances
+KC.cst.Mg = krige.control(obj.model = vgmdl.cst.Mg)
+kriging.cst.Mg <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.cst.Mg,
+                             dd.dists.mat = ddm$obs,
+                             dl.dists.mat = ddm$loc)
+
+```
+
+
+
+```{r Mg-cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical cost-based variogram and fitted model.'}
+
+ggplot(vg.cst.Mg) +
+  geom_variogram(vgmdl.cst.Mg) +
+  ylab('semivariance Mg')
+
+```
+
+
+```{r Mg-cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
+
+p.Mg <- ggplot(data.frame(loc, Prediction = kriging.cst.Mg$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Mg
+
+```
+
+
+
+## Comparison of method outcomes
+
+```{r Mg-parameter-table}
+kable(par.tab, digits = 2)
+```
+
+
+```{r Mg-compare-variogram-plot, fig.width = 6, fig.height = 4, fig.cap = 'Empirical variogram and fitted models by method for Magnesium.'}
+
+vg.both <- rbind(data.frame(vg.std.Mg[1:3],
+                            variable = 'Mg',
+                            method = 'Euclidean'),
+                 data.frame(vg.cst.Mg[1:3],
+                            variable = 'Mg',
+                            method = 'Cost-based'))
+
+names(vg.both) <- c('distance', 'semivariance', 'n', 'variable', 'method')
+
+p.Mg <- ggplot(filter(vg.both, variable == 'Mg'),
+               aes(distance, semivariance)) +
+  geom_point(aes(size = n)) + 
+  expand_limits(y=0) +
+  geom_variogram(vgmdl.std.Mg, variable = 'Mg', method = 'Euclidean') +
+  geom_variogram(vgmdl.cst.Mg, variable = 'Mg', method = 'Cost-based') +
+  facet_grid(method ~ .) +
+  theme_bw()
+
+p.Mg
+
+```
+
+
+
+
+```{r Mg-compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+res.df.Mg <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std.Mg$predict,
+                                          kriging.cst.Mg$predict,
+                                          kriging.std.Mg$predict-kriging.cst.Mg$predict))
+
+p.Mg <- 
+  ggplot(filter(res.df.Mg, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .02, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method, ncol = 1) 
+
+
+p.Mg
+```
+
+
+```{r Mg-cost-based-vs-euclidean-prediction, fig.cap = 'Pointwise comparison of predictions by method.'}
+
+p.Mg <- data.frame(Euclidean  = kriging.std.Mg$predict,
+                   Cost_based = kriging.cst.Mg$predict) %>% 
+  sample_n(5e3) %>% 
+  ggplot(aes(Euclidean, Cost_based)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  theme_bw()
+
+
+p.Mg
+
+```
+
+In the scatter plot, the horizontal patterns correspond to predictions on observed values.
+Otherwise, the differences are negligeable.
+
+```{r Mg-map-kriging-difference, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based predictions.'}
+
+pred.dif.Mg <- 
+  ggplot(filter(res.df.Mg, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .02, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\npredictions') +
+  scale_color_viridis(name = 'Difference in\npredictions')
+
+pred.dif.Mg
+# grid.arrange(pred.comp, pred.dif)
+```
+
+
+
+
+
+```{r Mg-compare-kriging-errors, fig.width=10, fig.height=7, fig.cap = 'Comparison of prediction error by method.'}
+
+res.var.Mg <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std.Mg$krige.var,
+                                          kriging.cst.Mg$krige.var,
+                                          kriging.std.Mg$krige.var-kriging.cst.Mg$krige.var))
+
+ggplot(filter(res.var.Mg, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .02, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Kriging\nvariance') +
+  scale_color_viridis(name = 'Kriging\nvariance') +
+  facet_wrap(~method, ncol = 1) 
+
+```
+
+
+```{r Mg-map-kriging-difference-errors, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based prediction errors'}
+
+ggplot(filter(res.var.Mg, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .02, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\nKriging variance') +
+  scale_color_viridis(name = 'Difference in\nKriging variance')
+```
+
+Near the observations, the cost-based approach has a larger prediction error due to its increased estimation of the nugget (i.e. short-range variance).
+In the main area, the prediction errors are practically the same with both approaches.
+Behind the walls, the Euclidean prediction error is unrealistically low.
+
+
+## Leave-one-out Cross Validation (LOOCV)
+
+```{r Mg-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
+loocvdat <- obs.gd
+loocvdat$data <- variable
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+sink()   # Why I need this?
+
+# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+
+pred_error <- data.frame(
+  std = loocvdat$data - res[, 1],
+  cst = loocvdat$data - res[, 2]
+)
+
+ggplot(pred_error, aes(std, cst)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1)
+
+rmse <- function(x) sqrt(mean(x**2))
+
+pred_error %>% 
+  gather(method, error) %>% 
+  group_by(method) %>% 
+  summarise(rmse(error)) %>% 
+  kable(digits = 2)
+
+```
+
+
+
+
+
+
+
+
+\clearpage
+
+# Analysis of Zinc
+
+```{r Zn-fix-variable}
+variable <- obs.gd$data[, 'Zn']
+```
+
+
+## Euclidean kriging
+
+
+The variogram model is Exponential.
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+
+
+```{r Zn-euclidean-kriging, include = FALSE}
+
+## compute euclidean (only) variogram
+vg.std.Zn <- variog(obs.gd, data = variable)
+
+## fitting variogram models
+vgmdl.std.Zn <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML")
+
+## Fitted parameters
+par.tab <- data.frame(
+  Euclidean = with(vgmdl.std.Zn,
+                   c(beta,
+                     nugget,
+                     sigmasq,
+                     # kappa,
+                     phi,
+                     practicalRange,
+                     loglik)),
+  row.names = c("Intercept",
+                "Nugget",
+                "Partial sill",
+                # "kappa",
+                "phi",
+                "Pract. range",
+                "Log-likelihood"))
+
+
+# Conventional Kriging, Euclidean distances
+KC.std.Zn = krige.control(obj.model = vgmdl.std.Zn)
+kriging.std.Zn <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.std.Zn)
+
+```
+
+```{r Zn-euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+
+ggplot(vg.std.Zn) + 
+  geom_variogram(vgmdl.std.Zn) + 
+  ylab('semivariance Zn')
+
+```
+
+
+```{r Zn-euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
+
+p.Zn <- ggplot(data.frame(loc, Prediction = kriging.std.Zn$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Zn
+
+```
+
+
+
+## Cost-based kriging
+
+
+
+```{r Zn-cost-based-kriging, include=FALSE}
+
+
+## compute cost-based empirical variogram
+vg.cst.Zn <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+
+## fitting variogram models
+vgmdl.cst.Zn <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.51,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "exponential",
+                       lik.method = "REML",
+                       dists.mat = ddm$obs)
+
+## Fitted parameters
+par.tab <- cbind(par.tab,
+                 data.frame(
+                   Cost_based = with(vgmdl.cst.Zn,
+                                     c(beta,
+                                       nugget,
+                                       sigmasq,
+                                       # kappa,
+                                       phi,
+                                       practicalRange,
+                                       loglik))))
+
+
+# Conventional Kriging, Euclidean distances
+KC.cst.Zn = krige.control(obj.model = vgmdl.cst.Zn)
+kriging.cst.Zn <- krige.conv(obs.gd,
+                             data = variable,
+                             locations = loc,
+                             krige = KC.cst.Zn,
+                             dd.dists.mat = ddm$obs,
+                             dl.dists.mat = ddm$loc)
+
+```
+
+
+
+```{r Zn-cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical cost-based variogram and fitted model.'}
+
+ggplot(vg.cst.Zn) +
+  geom_variogram(vgmdl.cst.Zn) +
+  ylab('semivariance Zn')
+
+```
+
+
+```{r Zn-cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
+
+p.Zn <- ggplot(data.frame(loc, Prediction = kriging.cst.Zn$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis()
+
+p.Zn
+
+```
+
+
+
+## Comparison of method outcomes
+
+```{r Zn-parameter-table}
+kable(par.tab, digits = 2)
+```
+
+
+```{r Zn-compare-variogram-plot, fig.width = 6, fig.height = 4, fig.cap = 'Empirical variogram and fitted models by method for Zinc.'}
+
+vg.both <- rbind(data.frame(vg.std.Zn[1:3],
+                            variable = 'Zn',
+                            method = 'Euclidean'),
+                 data.frame(vg.cst.Zn[1:3],
+                            variable = 'Zn',
+                            method = 'Cost-based'))
+
+names(vg.both) <- c('distance', 'semivariance', 'n', 'variable', 'method')
+
+p.Zn <- ggplot(filter(vg.both, variable == 'Zn'),
+               aes(distance, semivariance)) +
+  geom_point(aes(size = n)) + 
+  expand_limits(y=0) +
+  geom_variogram(vgmdl.std.Zn, variable = 'Zn', method = 'Euclidean') +
+  geom_variogram(vgmdl.cst.Zn, variable = 'Zn', method = 'Cost-based') +
+  facet_grid(method ~ .) +
+  theme_bw()
+
+p.Zn
+
+```
+
+
+
+
+```{r Zn-compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+res.df.Zn <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std.Zn$predict,
+                                          kriging.cst.Zn$predict,
+                                          kriging.std.Zn$predict-kriging.cst.Zn$predict))
+
+p.Zn <- 
+  ggplot(filter(res.df.Zn, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method, ncol = 1) 
+
+
+p.Zn
+```
+
+
+```{r Zn-cost-based-vs-euclidean-prediction, fig.cap = 'Pointwise comparison of predictions by method.'}
+
+p.Zn <- data.frame(Euclidean  = kriging.std.Zn$predict,
+                   Cost_based = kriging.cst.Zn$predict) %>% 
+  sample_n(5e3) %>% 
+  ggplot(aes(Euclidean, Cost_based)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  theme_bw()
+
+
+p.Zn
+
+```
+
+In the scatter plot, the horizontal patterns correspond to predictions on observed values.
+Otherwise, the differences are negligeable.
+
+```{r Zn-map-kriging-difference, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based predictions.'}
+
+pred.dif.Zn <- 
+  ggplot(filter(res.df.Zn, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\npredictions') +
+  scale_color_viridis(name = 'Difference in\npredictions')
+
+pred.dif.Zn
+# grid.arrange(pred.comp, pred.dif)
+```
+
+
+
+
+
+```{r Zn-compare-kriging-errors, fig.width=10, fig.height=7, fig.cap = 'Comparison of prediction error by method.'}
+
+res.var.Zn <- data.frame(loc, 
+                        method = c(rep('Classical', nrow(loc)),
+                                   rep('Cost-based', nrow(loc)),
+                                   rep('Difference', nrow(loc))),
+                        Prediction = c(kriging.std.Zn$krige.var,
+                                          kriging.cst.Zn$krige.var,
+                                          kriging.std.Zn$krige.var-kriging.cst.Zn$krige.var))
+
+ggplot(filter(res.var.Zn, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Kriging\nvariance') +
+  scale_color_viridis(name = 'Kriging\nvariance') +
+  facet_wrap(~method, ncol = 1) 
+
+```
+
+
+```{r Zn-map-kriging-difference-errors, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based prediction errors'}
+
+ggplot(filter(res.var.Zn, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
+  geom_india() +
+  scale_fill_viridis(name = 'Difference in\nKriging variance') +
+  scale_color_viridis(name = 'Difference in\nKriging variance')
+```
+
+Near the observations, the cost-based approach has a larger prediction error due to its increased estimation of the nugget (i.e. short-range variance).
+In the main area, the prediction errors are practically the same with both approaches.
+Behind the walls, the Euclidean prediction error is unrealistically low.
+
+
+## Leave-one-out Cross Validation (LOOCV)
+
+```{r Zn-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
+loocvdat <- obs.gd
+loocvdat$data <- variable
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+sink()   # Why I need this?
+
+# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+
+pred_error <- data.frame(
+  std = loocvdat$data - res[, 1],
+  cst = loocvdat$data - res[, 2]
+)
+
+ggplot(pred_error, aes(std, cst)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1)
+
+rmse <- function(x) sqrt(mean(x**2))
+
+pred_error %>% 
+  gather(method, error) %>% 
+  group_by(method) %>% 
+  summarise(rmse(error)) %>% 
+  kable(digits = 2)
+
+```
+
+
+
+
+
+
 \clearpage
 
 # Conclusions
 
-- Actually, the kriging model is not adjusting very well the tails of the data, which are heavier than expected.
+- Actually, the kriging model for Calcium is not adjusting very well the tails of the data, which are heavier than expected.
   This happens both for the Euclidean and cost-based models. This means that none of both approaches will be really good predictors anyways.
 
-```{r model-diagnostics}
+```{r model-diagnostics, fig.width = 6, fig.height = 6, fig.cap = 'Diagnostics of residuals for Calcium.'}
 ## Not really a nice fit
-hist(resid(vgmdl.std.Ca))
-hist(resid(vgmdl.cst.Ca))
+resid.Ca <- rbind(data.frame(x = resid(vgmdl.std.Ca),
+                             model = 'Euclidean'),
+                  data.frame(x = resid(vgmdl.cst.Ca),
+                             model = 'Cost-based'))
 
-qqnorm(resid(vgmdl.std.Ca))
-qqline(resid(vgmdl.std.Ca))
+## manual qqline computation
+qql <- function(x, probs = c(0.25, 0.75)) {
+  sq <- quantile(x, probs)  # sample quantiles
+  tq <- qnorm(probs)                 # theoretical quantiles
+  slp <- diff(sq)/diff(tq)
+  data.frame(intercept = sq[1L] - slp * tq[1L],
+             slope = slp)
+}
 
-qqnorm(resid(vgmdl.cst.Ca))
-qqline(resid(vgmdl.cst.Ca))
+resid.Ca %>% 
+  group_by(model) %>% 
+  summarize(int = qql(x)$intercept,
+            slp = qql(x)$slope) -> dat.lines
+
+grid.arrange(
+  ggplot(resid.Ca, aes(x)) +
+    geom_histogram() +
+    xlab('Residuals Ca') + ylab(NULL) +
+    facet_wrap(~ model),
+  ggplot(resid.Ca, aes(sample = x)) +
+    geom_point(stat = 'qq') +
+    geom_abline(aes(int = int, slope = slp), data = dat.lines) +
+    facet_wrap(~ model)
+)
 
 ```
 
+- The rest of the variables do not show a clear discontinuity as a consequence of the walls. The Euclidean and cost-based predictions are very similar. Furthermore, the Euclidean and cost-based emprirical variograms display practically the same shape in all cases. This suggests that the solid structures are not really affecting the spatial distribution of chemicals.
+
+- Many variables display an initial drop in the semivariance. Even this is based on only 10 or 12 pairs of observations in the first lag, the drop is dramatic for several variables like Copper, Potasium or Magnesium. This may be due to the presence of some extreme values which contrast heavily with neighbouring values. The impact in higher lags is absorbed by the high number of pairs.

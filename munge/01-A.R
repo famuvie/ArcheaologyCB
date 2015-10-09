@@ -26,8 +26,11 @@ border_coord <- with(fortify(shp.contorno),
 ### INDIA ###
 #############
 
-dataset.Ca.Cu <- rename(dataset.Ca.Cu, x = X, y = Y)
-obs.india <- gather(dataset.Ca.Cu, variable, value, Ca:Cu)
+dataset <- rename(dataset, sample = SAMPLE, x = X, y = Y)
+obs.india <- gather(dataset, variable, value, Ca:Zn)
+
+## Fix an isolated coordinate
+dataset$x[30] <- 10.2   
 
 # extent.india <- extent(c(extendrange(c(dataset.Ca.Cu$X,
 #                                        extent(shp.walls)@xmin,
