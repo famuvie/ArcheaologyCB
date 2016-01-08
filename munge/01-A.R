@@ -52,11 +52,25 @@ border_coord <- with(fortify(shp.contorno),
 ### INDIA ###
 #############
 
+# obs.india = dataset + dataset.20150107
+# extent.india
+
+## Updated version of dataset (07/01/2015)
+## with additional calculated variables
+## check consistency and integrate into dataset
+id.vars <- c('SAMPLE', 'Area', 'Side', 'X', 'Y')
+stopifnot(identical(dataset[, id.vars], dataset.20150107[, id.vars]))
+dataset <- cbind(dataset, select(dataset.20150107, -one_of(id.vars)))
+
 dataset <- rename(dataset, sample = SAMPLE, x = X, y = Y)
-obs.india <- gather(dataset, variable, value, Ca:Zn)
 
 ## Fix an isolated coordinate
 dataset$x[30] <- 10.2   
+
+
+## Final data.frame of observations
+obs.india <- gather(dataset, variable, value, -(sample:y))
+
 
 # extent.india <- extent(c(extendrange(c(dataset.Ca.Cu$X,
 #                                        extent(shp.walls)@xmin,
@@ -67,3 +81,6 @@ dataset$x[30] <- 10.2
 
 # Manually indicated to match previous study
 extent.india <- extent(c(6.5, 17.5, -14.5, -7.5))
+
+## Cleanup
+rm(dataset.20150107)
