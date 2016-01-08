@@ -407,7 +407,7 @@ data.frame(Euclidean = kriging.std$predict,
            Cost_based = kriging.cst$predict) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   xlim(1, 6) + ylim(1, 6)
 ```
 
@@ -680,7 +680,7 @@ data.frame(Euclidean = kriging.std$predict,
            Cost_based = kriging.cst$predict) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   xlim(1, 6) + ylim(1, 6)
 ```
 

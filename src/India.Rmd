@@ -447,7 +447,7 @@ p.Ca <- data.frame(Euclidean  = kriging.std.Ca$predict,
   sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   theme_bw()
 
 
@@ -523,7 +523,7 @@ loocvdat$data <- variable
 res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
 sink()   # Why I need this?
 
-# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+# qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
 
 pred_error <- data.frame(
   std = loocvdat$data - res[, 1],
@@ -532,7 +532,7 @@ pred_error <- data.frame(
 
 ggplot(pred_error, aes(std, cst)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1)
+  geom_abline(intercept = 0, slope = 1)
 
 rmse <- function(x) sqrt(mean(x**2))
 
@@ -762,7 +762,7 @@ p.Cu <- data.frame(Euclidean  = kriging.std.Cu$predict,
   sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   facet_grid(~variable) + 
   theme_bw()
 
@@ -839,7 +839,7 @@ loocvdat$data <- variable
 res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
 sink()   # Why I need this?
 
-# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+# qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
 
 pred_error <- data.frame(
   std = loocvdat$data - res[, 1],
@@ -848,7 +848,7 @@ pred_error <- data.frame(
 
 ggplot(pred_error, aes(std, cst)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1)
+  geom_abline(intercept = 0, slope = 1)
 
 rmse <- function(x) sqrt(mean(x**2))
 
@@ -1085,7 +1085,7 @@ p.Fe <- data.frame(Euclidean  = kriging.std.Fe$predict,
   sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   theme_bw()
 
 
@@ -1161,7 +1161,7 @@ loocvdat$data <- variable
 res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
 sink()   # Why I need this?
 
-# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+# qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
 
 pred_error <- data.frame(
   std = loocvdat$data - res[, 1],
@@ -1170,7 +1170,7 @@ pred_error <- data.frame(
 
 ggplot(pred_error, aes(std, cst)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1)
+  geom_abline(intercept = 0, slope = 1)
 
 rmse <- function(x) sqrt(mean(x**2))
 
@@ -1408,7 +1408,7 @@ p <- data.frame(Euclidean  = kriging.std$predict,
   sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   theme_bw()
 
 
@@ -1484,7 +1484,7 @@ loocvdat$data <- variable
 res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
 sink()   # Why I need this?
 
-# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+# qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
 
 pred_error <- data.frame(
   std = loocvdat$data - res[, 1],
@@ -1493,7 +1493,7 @@ pred_error <- data.frame(
 
 ggplot(pred_error, aes(std, cst)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1)
+  geom_abline(intercept = 0, slope = 1)
 
 rmse <- function(x) sqrt(mean(x**2))
 
@@ -1732,7 +1732,7 @@ p.Mg <- data.frame(Euclidean  = kriging.std.Mg$predict,
   sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   theme_bw()
 
 
@@ -1808,7 +1808,7 @@ loocvdat$data <- variable
 res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
 sink()   # Why I need this?
 
-# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+# qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
 
 pred_error <- data.frame(
   std = loocvdat$data - res[, 1],
@@ -1817,7 +1817,7 @@ pred_error <- data.frame(
 
 ggplot(pred_error, aes(std, cst)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1)
+  geom_abline(intercept = 0, slope = 1)
 
 rmse <- function(x) sqrt(mean(x**2))
 
@@ -2057,7 +2057,7 @@ p.Zn <- data.frame(Euclidean  = kriging.std.Zn$predict,
   sample_n(5e3) %>% 
   ggplot(aes(Euclidean, Cost_based)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  geom_abline(intercept = 0, slope = 1, col = 'darkgray') +
   theme_bw()
 
 
@@ -2133,7 +2133,7 @@ loocvdat$data <- variable
 res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
 sink()   # Why I need this?
 
-# qplot(res[,1], res[,2]) + geom_abline(int=0, sl=1)
+# qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
 
 pred_error <- data.frame(
   std = loocvdat$data - res[, 1],
@@ -2142,7 +2142,7 @@ pred_error <- data.frame(
 
 ggplot(pred_error, aes(std, cst)) +
   geom_point() +
-  geom_abline(int = 0, sl = 1)
+  geom_abline(intercept = 0, slope = 1)
 
 rmse <- function(x) sqrt(mean(x**2))
 
@@ -2194,7 +2194,7 @@ grid.arrange(
     facet_wrap(~ model),
   ggplot(resid.Ca, aes(sample = x)) +
     geom_point(stat = 'qq') +
-    geom_abline(aes(int = int, slope = slp), data = dat.lines) +
+    geom_abline(aes(intercept = int, slope = slp), data = dat.lines) +
     facet_wrap(~ model)
 )
 
