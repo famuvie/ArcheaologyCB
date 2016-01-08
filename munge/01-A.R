@@ -2,18 +2,44 @@
 ### CASA DE LAS AGUILAS ###
 ###########################
 
+## Percent carbonates variable
+
 ## the third coordinate and the data value are the same thing
 shp.quimicos@coords <- shp.quimicos@coords[, -3]
 shp.quimicos@bbox <- shp.quimicos@bbox[-3, ]
 
 ## Extract observation data from SpatialPointsDataFrame
-obs <- cbind(coordinates(shp.quimicos),
-             slot(shp.quimicos, 'data'))
-names(obs) <- c('x', 'y', 'pc')
+obs.pc <- cbind(coordinates(shp.quimicos),
+                slot(shp.quimicos, 'data'))
+names(obs.pc) <- c('x', 'y', 'pc')
 
 ## Remove duplicated measurements
-obs <- obs[!duplicated(obs[, c('x', 'y')]), ]
+obs.pc <- obs.pc[!duplicated(obs.pc[, c('x', 'y')]), ]
 
+
+## Phosphates
+
+## move a bit some points that fall on walls
+idx <- c(200, 222, 227, 284)
+shiftx <- c(0, -.1, 0, 0)
+shifty <- c(.1, 0, .1, .1)
+shp.fosfatos@coords[idx, ] <- 
+  shp.fosfatos@coords[idx, ] + cbind(shiftx, shifty)
+obs.po4 <- data.frame(
+  cbind(
+    coordinates(shp.fosfatos),
+    slot(shp.fosfatos, 'data')$F3
+  )
+)
+
+names(obs.po4) <- c('x', 'y', 'po4')
+
+
+## Full dataset
+obs <- rbind(rename(transform(obs.pc, var = 'pc'),
+                    value = pc),
+             rename(transform(obs.po4, var = 'po4'),
+                    value = po4))
 
 ## Coordinates of the border 
 border_coord <- with(fortify(shp.contorno),

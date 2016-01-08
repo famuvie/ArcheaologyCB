@@ -38,7 +38,7 @@ theme_set(theme_tufte())
 ## To reuse in most plots:
 ## - structures + border + observations
 ## - equal scales + no labs
-geom_aguilas <- function()
+geom_aguilas <- function(obs)
   list(geom_polygon(aes(long, lat, group = group),
                     data = shp.construcciones),
   # geom_path(aes(group = group), data = shp.area.trabajo),
@@ -50,13 +50,30 @@ geom_aguilas <- function()
 ```
 
 
-Here we compare the outcome of a classical kriging against a cost-based kriging which takes into account the presence of a semi-barrier
+Here we compare the outcome of a classical kriging against a cost-based kriging which takes into account the presence of a semi-barrier.
 
 ## Data description
 
 Figures 1 and 2 display the raw data, and an exploratory smoothed surface.
 
-```{r raw-data, fig.cap = 'Measurement locations and observed values'}
+
+## Data description
+
+```{r data-summary, fig.height=3, fig.cap='Empirical distribution of observations.'}
+
+obs.wide <- spread(obs, var, value)
+str(obs.wide)
+summary(obs.wide)
+
+ggplot(transform(obs, value = factor(value)), aes(value)) +
+  geom_histogram() +
+  facet_wrap(~ var) +
+  theme_bw()
+```
+
+
+
+```{r raw-data, fig.height = 6, fig.cap = 'Measurement locations and observed values'}
 # plot(shp.area.trabajo)
 # plot(shp.construcciones)
 
@@ -65,49 +82,60 @@ Figures 1 and 2 display the raw data, and an exploratory smoothed surface.
 # structures <- join(structures, shp.construcciones@data, by = 'id')
 
   
-ggplot(shp.construcciones, aes(long, lat)) +
-  geom_aguilas() +
-  geom_point(aes(x, y, color = pc), data = obs, size = 5, shape = 15) +
+p.pc <- ggplot(shp.construcciones, aes(long, lat)) +
+  geom_aguilas(obs.pc) +
+  geom_point(aes(x, y, color = pc), data = obs.pc, size = 5, shape = 15) +
   scale_color_viridis()
 
+p.po4 <- ggplot(shp.construcciones, aes(long, lat)) +
+  geom_aguilas(obs.pc) +
+  geom_point(aes(x, y, color = po4), data = obs.po4, size = 5, shape = 15) +
+  scale_color_viridis()
+
+grid.arrange(p.pc, p.po4)
 ```
 
 
 
 ```{r smoothed-data, fig.cap = 'Exploratory kernel smoothing of the measurements'}
-## Create a `spatstat`'s Point Pattern object from the coordinates.
-dat.ppp <- as.ppp(obs, owin(poly = rev(border_coord)))
-# plot(dat.ppp)
 
+## Relative dimensions of the region
+y2x_factor <- 1/do.call('/', as.list(diff(t(bbox(shp.contorno)))))
+dimyx <- round(128 * c(y2x_factor, 1))
 ## use area.trabajo better than border!
 ## No: owin must be a (one) polygon.
 ## Otherwise, we could use a binary mask.
 ## But I think it is unimportant
 
+## Create a `spatstat`'s Point Pattern object from the coordinates.
+dat.pc.ppp <- as.ppp(obs.pc, owin(poly = rev(border_coord)))
+# plot(dat.pc.ppp)
 
-## Relative dimensions of the region
-y2x_factor <- 1/do.call('/', as.list(diff(t(bbox(shp.contorno)))))
-dimyx <- round(128 * c(y2x_factor, 1))
+smooth.pc.im <- Smooth(dat.pc.ppp, dimyx = dimyx, sigma = 1)
+smooth.pc.dat <- as.data.frame(smooth.pc.im)
 
-smooth.im <- Smooth(dat.ppp, dimyx = dimyx, sigma = 1)
-smooth.dat <- as.data.frame(smooth.im)
+dat.po4.ppp <- as.ppp(obs.po4, owin(poly = rev(border_coord)))
+# plot(dat.po4.ppp)
 
-ggplot(smooth.dat, aes(x, y)) +
+smooth.po4.im <- Smooth(dat.po4.ppp, dimyx = dimyx, sigma = 1)
+smooth.po4.dat <- as.data.frame(smooth.po4.im)
+
+plotdat <- 
+  rbind(data.frame(smooth.pc.dat,
+                   var = 'pc'),
+        data.frame(smooth.po4.dat,
+                   var = 'po4'))
+
+ggplot(plotdat, aes(x, y)) +
   geom_raster(aes(fill = value)) +
-  geom_aguilas() +
-  scale_fill_viridis(limits = c(1, 6))
+  geom_aguilas(data.frame(obs.pc, var = 'pc')) +
+  geom_aguilas(data.frame(obs.po4, var = 'po4')) +
+  scale_fill_viridis(limits = c(1, 6)) +
+  facet_wrap(~var)
+
 
 ```
 
-
-## Euclidean kriging
-
-It may make sense to use the *room* as a covariate in this model (Universal kriging).
-For the moment, we just perform an ordinary kriging.
-
-
-The variogram model is Matérn.
-We choose to estimate the nugget effect, which may account for measurement error, for example.
 
 
 ```{r cost-surface}
@@ -139,24 +167,44 @@ cost_surf <- rasterize(shp.area.trabajo, prediction_grid)
 ```
 
 
-```{r obs-and-prediction-locations}
-obs.gd <- as.geodata(obs, data.col="pc")
+```{r prediction-locations}
 loc <- coordinates(cost_surf)[!is.na(values(cost_surf)),]
 ```
 
+For the kriging predictions (both Euclidean and cost-based), we are using a
+prediction grid with a resolution of `r res`, clipped by the structure of the
+temple.
 
-```{r euclidean-kriging, include = FALSE}
+
+\pagebreak
+
+## Percent of Carbonates
+
+### Euclidean kriging
+
+It may make sense to use the *room* as a covariate in this model (Universal kriging).
+For the moment, we just perform an ordinary kriging.
+
+
+The variogram model is Matérn.
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+
+```{r pc-euclidean-kriging, include = FALSE}
+
+## Observations as geodata
+obs.pc.gd <- as.geodata(obs.pc, data.col="pc")
 
 ## compute euclidean (only) variogram
-vg.std <- variog(obs.gd)
+vg.std <- variog(obs.pc.gd)
 
 ## fitting variogram models
-vgmdl.std <- likfit(geodata = obs.gd,
+vgmdl.std <- likfit(geodata = obs.pc.gd,
                     fix.nugget = FALSE,
                     fix.kappa = FALSE,
                     kappa = 0.51,
                     ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
-                    cov.model = "matern",
+                    cov.model = "exponential",
                     lik.method = "REML")
 
 ## Fitted parameters
@@ -178,23 +226,23 @@ par.tab <- with(vgmdl.std,
 
 # Conventional Kriging, Euclidean distances
 KC.std = krige.control(obj.model = vgmdl.std)
-kriging.std <- krige.conv(obs.gd, locations = loc, krige = KC.std)
+kriging.std <- krige.conv(obs.pc.gd, locations = loc, krige = KC.std)
 
 ```
 
-```{r euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+```{r pc-euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical Euclidean variogram and fitted model.'}
 
 ggplot(vg.std) + geom_variogram(vgmdl.std) + xlim(c(0, 20))
 
 ```
 
 
-```{r euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
+```{r pc-euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
 
 ggplot(data.frame(loc, Prediction = kriging.std$predict), aes(x, y)) +
   geom_raster(aes(fill = Prediction, colour = Prediction)) +
   stat_contour(aes(z = Prediction), color = 'lightgray') +
-  geom_aguilas() +
+  geom_aguilas(obs.pc) +
   scale_fill_viridis(limits = c(1, 6)) +
   scale_color_viridis(limits = c(1, 6))
 
@@ -202,7 +250,7 @@ ggplot(data.frame(loc, Prediction = kriging.std$predict), aes(x, y)) +
 
 
 
-## Cost-based kriging
+### Cost-based kriging
 
 Watch out! the cost surface can be derived either:
 - from a SpatialPolygon of the working area
@@ -213,15 +261,15 @@ In the first case, the cost of non-conductive inner areas is NA, while in the se
 This has an effect on one-pixel transitions (? this requires further inverstigation).
 
 
-```{r cost-based-distances}
+```{r pc-cost-based-distances}
 
-ddm <- distmatGen(obs[, c('x', 'y')], cost_surf)
+ddm <- distmatGen(obs.pc[, c('x', 'y')], cost_surf)
 ddm$loc <- ddm$loc[!is.na(values(cost_surf)),]
 ```
 
-Some cost-based maps, for verifications purposes.
+Some cost-based maps, for verification purposes.
 
-```{r some-cost-based-maps, fig.width = 10, fig.height = 7}
+```{r pc-some-cost-based-maps, fig.width = 10, fig.height = 7}
 ## Cost-based maps to each observation
 cb.maps <-  cbind(loc,
                   ddm$loc) %>%
@@ -229,56 +277,51 @@ cb.maps <-  cbind(loc,
   gather("Observation", "Distance", -(x:y))
 
 idx <- c(10, 20, 90, 115, 280, 288)
-obs.idx <- cbind(obs[idx, ],
+obs.pc.idx <- cbind(obs.pc[idx, ],
                  Observation = factor(idx,
                                       levels = levels(cb.maps$Observation)))
 ggplot(filter(cb.maps, Observation %in% idx), aes(x, y)) + 
   geom_tile(aes(fill = Distance, color = Distance)) +
   stat_contour(aes(z = Distance), color = 'lightgray') +
-  geom_point(data = obs.idx, col = 'red') +
-  # geom_point(data = obs[117, ], col = 'red') +
+  geom_point(data = obs.pc.idx, col = 'red') +
+  # geom_point(data = obs.pc[117, ], col = 'red') +
   # geom_point(data = filter(cb.maps, Observation %in% idx[1])[128, ], col = 'red') +
   # geom_polygon(aes(x, y), data = border_coord) +
   scale_fill_viridis() +
   scale_color_viridis() +
-  geom_point(data = obs, col = 'white', alpha = .5) +
+  geom_point(data = obs.pc, col = 'white', alpha = .5) +
   coord_fixed() +
   xlab('') + ylab('') +
-  geom_aguilas() +
+  geom_aguilas(obs.pc) +
   facet_wrap(~Observation)
 
 ```
 
 
-```{r debug-locator, eval = FALSE}
-library(grid)
-tmp <- grid.locator('in')
-tmp.n <- as.numeric(tmp)
-tmp2.x <- as.numeric(convertX( unit(coordinates(cost_surf)[,'x'],'native'), 'in' ))
-tmp2.y <- as.numeric(convertY( unit(coordinates(cost_surf)[, 'y'],'native'), 'in' ))
-
-w <- which.min( (tmp2.x-tmp.n[1])^2 + (tmp2.y-tmp.n[2])^2 )
-grid.text(w, tmp$x, tmp$y )
+```{r pc-debug-locator, eval = FALSE}
+# library(grid)
+# tmp <- grid.locator('in')
+# tmp.n <- as.numeric(tmp)
+# tmp2.x <- as.numeric(convertX( unit(coordinates(cost_surf)[,'x'],'native'), 'in' ))
+# tmp2.y <- as.numeric(convertY( unit(coordinates(cost_surf)[, 'y'],'native'), 'in' ))
+# 
+# w <- which.min( (tmp2.x-tmp.n[1])^2 + (tmp2.y-tmp.n[2])^2 )
+# grid.text(w, tmp$x, tmp$y )
 ```
 
 
 
-```{r cost-based-kriging, include=FALSE}
-## TODO: 
-## Point 117 lies over a column (is isolated)
-## - Issue a warning in distmatGen()
-## - Let variog(), likfit() and krige.conv() handle that situation
-
+```{r pc-cost-based-kriging, include=FALSE}
 ## compute cost-based empirical variogram
-vg.cst <- variog(obs.gd, dists.mat = ddm$obs)
+vg.cst <- variog(obs.pc.gd, dists.mat = ddm$obs)
 
 ## fitting variogram models
-vgmdl.cst <- likfit(geodata = obs.gd,
+vgmdl.cst <- likfit(geodata = obs.pc.gd,
                     fix.nugget = FALSE,
                     fix.kappa = FALSE,
                     kappa = 0.51,
                     ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
-                    cov.model = "matern",
+                    cov.model = "exponential",
                     lik.method = "REML",
                     dists.mat = ddm$obs)
 
@@ -296,7 +339,7 @@ par.tab$'Cost-based' <- with(vgmdl.cst,
 ## With trend, Cost-based distances
 KC.cost = krige.control(obj.model = vgmdl.cst)
 
-kriging.cst <- krige.conv(obs.gd,
+kriging.cst <- krige.conv(obs.pc.gd,
                           locations    = loc,
                           krige        = KC.cost,
                           dd.dists.mat = ddm$obs,
@@ -306,19 +349,19 @@ kriging.cst <- krige.conv(obs.gd,
 
 
 
-```{r cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical variogram and fitted model.'}
+```{r pc-cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical Cost-based variogram and fitted model.'}
 
 ggplot(vg.cst) + geom_variogram(vgmdl.cst) + xlim(c(0, 20))
 
 ```
 
 
-```{r cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
+```{r pc-cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
 
 ggplot(data.frame(loc, Prediction = kriging.cst$predict), aes(x, y)) +
   geom_raster(aes(fill = Prediction, colour = Prediction)) +
   stat_contour(aes(z = Prediction), color = 'lightgray') +
-  geom_aguilas() +
+  geom_aguilas(obs.pc) +
   scale_fill_viridis(limits = c(0.99, 6.01)) +
   scale_color_viridis(limits = c(0.99, 6.01))
 
@@ -328,12 +371,12 @@ ggplot(data.frame(loc, Prediction = kriging.cst$predict), aes(x, y)) +
 
 ## Comparison of method outcomes
 
-```{r parameter-table}
+```{r pc-parameter-table}
 kable(par.tab, digits = 2)
 ```
 
 
-```{r compare-variogram-plot, fig.width = 6, fig.cap = 'Empirical variogram and fitted models by method.'}
+```{r pc-compare-variogram-plot, fig.width = 6, fig.cap = 'Empirical variograms and fitted models by method.'}
 
 vg.both <- rbind(data.frame(vg.std[1:3],
                             method = 'Euclidean'),
@@ -357,31 +400,8 @@ ggplot(vg.both, aes(distance, semivariance)) +
 The estimated variogram models are very similar in this case, with log-likelihoods of `r vgmdl.std$loglik` and `r vgmdl.cst$loglik` respectively.
 This yields very similar kriging predictions as well.
 
-```{r compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
 
-res.df <- data.frame(loc, 
-                     method = c(rep('Classical', nrow(loc)),
-                                rep('Cost-based', nrow(loc)),
-                                rep('Difference', nrow(loc))),
-                     Prediction = c(kriging.std$predict,
-                                    kriging.cst$predict,
-                                    kriging.std$predict-kriging.cst$predict))
-
-pred.comp <- 
-  ggplot(filter(res.df, method != 'Difference'),
-         aes(x, y)) + 
-  geom_raster(aes(fill = Prediction, colour = Prediction)) +
-  stat_contour(aes(z = Prediction), color = 'lightgray') +
-  geom_aguilas() +
-  scale_fill_viridis(limits = c(0.99, 6.01)) +
-  scale_color_viridis(limits = c(0.99, 6.01)) +
-  facet_wrap(~method) 
-
-print(pred.comp)
-```
-
-
-```{r cost-based-vs-euclidean-prediction}
+```{r pc-cost-based-vs-euclidean-prediction}
 
 data.frame(Euclidean = kriging.std$predict,
            Cost_based = kriging.cst$predict) %>% 
@@ -391,22 +411,356 @@ data.frame(Euclidean = kriging.std$predict,
   xlim(1, 6) + ylim(1, 6)
 ```
 
-In the scatter plot, the horizontal patterns correspond to predictions on observed values.
-Otherwise, the differences are negligeable.
 
-```{r map-kriging-difference, fig.width=10, fig.height=7, fig.cap='Difference between the cost-based prediction and the Euclidean prediction'}
+
+```{r pc-compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+res.df <- data.frame(loc, 
+                     method = c(rep('Classical', nrow(loc)),
+                                rep('Cost-based', nrow(loc)),
+                                rep('Difference', nrow(loc))),
+                     Prediction = c(kriging.std$predict,
+                                    kriging.cst$predict,
+                                    kriging.cst$predict-kriging.std$predict))
+
+pred.comp <- 
+  ggplot(filter(res.df, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_aguilas(obs.pc) +
+  scale_fill_viridis(limits = c(0.99, 6.01)) +
+  scale_color_viridis(limits = c(0.99, 6.01)) +
+  facet_wrap(~method) 
+
+print(pred.comp)
+```
+
+
+
+```{r pc-compare-kriging-errors, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+err.df <- data.frame(
+  loc, 
+  method = c(rep('Classical', nrow(loc)),
+             rep('Cost-based', nrow(loc)),
+             rep('Difference', nrow(loc))),
+  `Prediction error` = c(sqrt(kriging.std$krige.var),
+                         sqrt(kriging.cst$krige.var),
+                         sqrt(kriging.cst$krige.var)-sqrt(kriging.std$krige.var))
+)
+
+err.comp <- 
+  ggplot(filter(err.df, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction.error, colour = Prediction.error)) +
+  stat_contour(aes(z = Prediction.error), color = 'lightgray') +
+  geom_aguilas(obs.pc) +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method) 
+
+print(err.comp)
+```
+
+
+```{r pc-map-kriging-difference, fig.width=6, fig.height=7, fig.cap='Difference between the cost-based and the Euclidean predictions'}
 
 pred.dif <- 
   ggplot(filter(res.df, method == 'Difference'),
          aes(x, y)) + 
   geom_tile(aes(fill = Prediction, colour = Prediction)) +
   stat_contour(aes(z = Prediction), color = 'lightgray') +
-  geom_aguilas() +
+  geom_aguilas(obs.pc) +
   scale_fill_viridis() +
   scale_color_viridis() +
   facet_wrap(~method)
 
-print(pred.dif)
-# grid.arrange(pred.comp, pred.dif)
+err.dif <- 
+  ggplot(filter(err.df, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction.error, colour = Prediction.error)) +
+  stat_contour(aes(z = Prediction.error), color = 'lightgray') +
+  geom_aguilas(obs.pc) +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method)
+
+grid.arrange(pred.dif, err.dif)
 ```
+
+
+
+
+
+\pagebreak
+
+## Percent of Phosphates
+
+### Euclidean kriging
+
+It may make sense to use the *room* as a covariate in this model (Universal kriging).
+For the moment, we just perform an ordinary kriging.
+
+
+The variogram model is Matérn.
+We choose to estimate the nugget effect, which may account for measurement error, for example.
+
+
+
+```{r po4-euclidean-kriging, include = FALSE}
+## Observations as geodata
+obs.po4.gd <- as.geodata(obs.po4, data.col="po4")
+
+## compute euclidean (only) variogram
+vg.std <- variog(obs.po4.gd)
+
+## fitting variogram models
+vgmdl.std <- likfit(geodata = obs.po4.gd,
+                    fix.nugget = FALSE,
+                    fix.kappa = FALSE,
+                    kappa = 0.51,
+                    ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                    cov.model = "exponential",
+                    lik.method = "REML")
+
+## Fitted parameters
+par.tab <- with(vgmdl.std,
+                data.frame(Euclidean = c(beta,
+                                         nugget,
+                                         sigmasq,
+                                         kappa,
+                                         phi,
+                                         practicalRange),
+                           row.names = c("Intercept",
+                                         "Nugget",
+                                         "Partial sill",
+                                         "kappa",
+                                         "phi",
+                                         "Pract. range")))
+  # , Cost_based=c(round(vgmdl.dmat$tausq,2),round(vgmdl.dmat$sigmasq,2),round(vgmdl.dmat$phi,0))
+
+
+# Conventional Kriging, Euclidean distances
+KC.std = krige.control(obj.model = vgmdl.std)
+kriging.std <- krige.conv(obs.po4.gd, locations = loc, krige = KC.std)
+
+```
+
+```{r po4-euclidean-variogram-plot, fig.width = 6,fig.height = 3, fig.cap = 'Empirical Euclidean variogram and fitted model.'}
+
+ggplot(vg.std) + geom_variogram(vgmdl.std) + xlim(c(0, 20))
+
+```
+
+
+```{r po4-euclidean-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Euclidean kriging prediction'}
+
+ggplot(data.frame(loc, Prediction = kriging.std$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_aguilas(obs.po4) +
+  scale_fill_viridis(limits = c(1, 6)) +
+  scale_color_viridis(limits = c(1, 6)) 
+```
+
+
+
+### Cost-based kriging
+
+Watch out! the cost surface can be derived either:
+- from a SpatialPolygon of the working area
+- from the SpatialPolygons of the border and of the inner structures
+
+The results from both methods are not the same.
+In the first case, the cost of non-conductive inner areas is NA, while in the second is 0.
+This has an effect on one-pixel transitions (? this requires further inverstigation).
+
+
+```{r po4-cost-based-distances}
+
+ddm <- distmatGen(obs.po4[, c('x', 'y')], cost_surf)
+ddm$loc <- ddm$loc[!is.na(values(cost_surf)),]
+```
+
+
+```{r po4-cost-based-kriging, include=FALSE}
+
+## compute cost-based empirical variogram
+vg.cst <- variog(obs.po4.gd, dists.mat = ddm$obs)
+
+## fitting variogram models
+vgmdl.cst <- likfit(geodata = obs.po4.gd,
+                    fix.nugget = FALSE,
+                    fix.kappa = FALSE,
+                    kappa = 0.51,
+                    ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                    cov.model = "exponential",
+                    lik.method = "REML",
+                    dists.mat = ddm$obs)
+
+## Fitted parameters
+par.tab$'Cost-based' <- with(vgmdl.cst,
+                             c(beta,
+                               nugget,
+                               sigmasq,
+                               kappa,
+                               phi,
+                               practicalRange))
+
+
+
+## With trend, Cost-based distances
+KC.cost = krige.control(obj.model = vgmdl.cst)
+
+kriging.cst <- krige.conv(obs.po4.gd,
+                          locations    = loc,
+                          krige        = KC.cost,
+                          dd.dists.mat = ddm$obs,
+                          dl.dists.mat = ddm$loc)
+
+```
+
+
+
+```{r po4-cost-based-variogram-plot, fig.width = 6, fig.height = 3, fig.cap = 'Empirical Cost-based variogram and fitted model.'}
+
+ggplot(vg.cst) + geom_variogram(vgmdl.cst, max.dist = 20) + xlim(c(0, 20))
+
+```
+
+
+```{r po4-cost-based-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Cost-based kriging prediction'}
+
+ggplot(data.frame(loc, Prediction = kriging.cst$predict), aes(x, y)) +
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_aguilas(obs.po4) +
+  scale_fill_viridis(limits = c(0.99, 6.01)) +
+  scale_color_viridis(limits = c(0.99, 6.01))
+
+```
+
+
+
+## Comparison of method outcomes
+
+```{r po4-parameter-table}
+kable(par.tab, digits = 2)
+```
+
+
+```{r po4-compare-variogram-plot, fig.width = 6, fig.cap = 'Empirical variograms and fitted models by method.'}
+
+vg.both <- rbind(data.frame(vg.std[1:3],
+                            method = 'Euclidean'),
+                 data.frame(vg.cst[1:3],
+                            method = 'Cost-based'))
+
+names(vg.both) <- c('distance', 'semivariance', 'n', 'method')
+
+ggplot(vg.both, aes(distance, semivariance)) +
+  geom_point(aes(size = n)) + 
+  expand_limits(y=0) +
+  geom_variogram(vgmdl.std, max.dist = 20, method = 'Euclidean') +
+  geom_variogram(vgmdl.cst, max.dist = 20, method = 'Cost-based') +
+  xlim(c(0, 20)) +
+  facet_grid(method ~.) +
+  theme_bw()
+
+```
+
+
+The estimated variogram models are very similar in this case, with log-likelihoods of `r vgmdl.std$loglik` and `r vgmdl.cst$loglik` respectively.
+This yields very similar kriging predictions as well.
+
+```{r po4-cost-based-vs-euclidean-prediction}
+
+data.frame(Euclidean = kriging.std$predict,
+           Cost_based = kriging.cst$predict) %>% 
+  ggplot(aes(Euclidean, Cost_based)) +
+  geom_point() +
+  geom_abline(int = 0, sl = 1, col = 'darkgray') +
+  xlim(1, 6) + ylim(1, 6)
+```
+
+
+```{r po4-compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+res.df <- data.frame(loc, 
+                     method = c(rep('Classical', nrow(loc)),
+                                rep('Cost-based', nrow(loc)),
+                                rep('Difference', nrow(loc))),
+                     Prediction = c(kriging.std$predict,
+                                    kriging.cst$predict,
+                                    kriging.cst$predict-kriging.std$predict))
+
+pred.comp <- 
+  ggplot(filter(res.df, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_aguilas(obs.po4) +
+  scale_fill_viridis(limits = c(0.99, 6.01)) +
+  scale_color_viridis(limits = c(0.99, 6.01)) +
+  facet_wrap(~method) 
+
+print(pred.comp)
+```
+
+
+
+```{r po4-compare-kriging-errors, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
+
+err.df <- data.frame(
+  loc, 
+  method = c(rep('Classical', nrow(loc)),
+             rep('Cost-based', nrow(loc)),
+             rep('Difference', nrow(loc))),
+  `Prediction error` = c(sqrt(kriging.std$krige.var),
+                         sqrt(kriging.cst$krige.var),
+                         sqrt(kriging.cst$krige.var)-sqrt(kriging.std$krige.var))
+)
+
+err.comp <- 
+  ggplot(filter(err.df, method != 'Difference'),
+         aes(x, y)) + 
+  geom_raster(aes(fill = Prediction.error, colour = Prediction.error)) +
+  stat_contour(aes(z = Prediction.error), color = 'lightgray') +
+  geom_aguilas(obs.po4) +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method) 
+
+print(err.comp)
+```
+
+
+
+```{r po4-map-kriging-difference, fig.width=6, fig.height=7, fig.cap='Difference between the cost-based and the Euclidean predictions'}
+
+pred.dif <- 
+  ggplot(filter(res.df, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction, colour = Prediction)) +
+  stat_contour(aes(z = Prediction), color = 'lightgray') +
+  geom_aguilas(obs.po4) +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method)
+
+err.dif <- 
+  ggplot(filter(err.df, method == 'Difference'),
+         aes(x, y)) + 
+  geom_tile(aes(fill = Prediction.error, colour = Prediction.error)) +
+  stat_contour(aes(z = Prediction.error), color = 'lightgray') +
+  geom_aguilas(obs.po4) +
+  scale_fill_viridis() +
+  scale_color_viridis() +
+  facet_wrap(~method)
+
+grid.arrange(pred.dif, err.dif)
+```
+
+
 
