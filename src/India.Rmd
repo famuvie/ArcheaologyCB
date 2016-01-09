@@ -27,8 +27,9 @@ opts_chunk$set(echo       = FALSE,
                comment    = NA,
                fig.width  = 4,
                fig.height = 4,
-               fig.caption = TRUE,
-               cache      = TRUE)
+               fig.caption= TRUE,
+               cache      = TRUE,
+               autodep    = TRUE)
 ```
 
 ```{r setup-ProjectTemplate, include = FALSE, cache = FALSE}
