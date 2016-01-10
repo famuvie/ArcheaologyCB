@@ -2812,6 +2812,9 @@ pred_error %>%
 
 # Analysis of enclosed spaces
 
+All these results look very much like Calcium results, at a different scale.
+
+
 ```{r enclosedspaces-fix-variable}
 variable <- obs.gd$data[, 'enclosedspaces']
 ```
