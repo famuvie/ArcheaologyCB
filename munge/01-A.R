@@ -52,7 +52,7 @@ border_coord <- with(fortify(shp.contorno),
 ### INDIA ###
 #############
 
-# obs.india = dataset + dataset.20150107
+# obs.india = dataset + dataset.20150107 + India.enclosed
 # extent.india
 
 ## Updated version of dataset (07/01/2015)
@@ -62,7 +62,14 @@ id.vars <- c('SAMPLE', 'Area', 'Side', 'X', 'Y')
 stopifnot(identical(dataset[, id.vars], dataset.20150107[, id.vars]))
 dataset <- cbind(dataset, select(dataset.20150107, -one_of(id.vars)))
 
+
+## Updated version of enclosedspaces variable (11/01/2015)
+stopifnot(identical(dataset[, id.vars], India.enclosed[, id.vars]))
+dataset$enclosedspaces <- India.enclosed$enclosedspaces
+
+
 dataset <- rename(dataset, sample = SAMPLE, x = X, y = Y)
+
 
 ## Fix an isolated coordinate
 dataset$x[30] <- 10.2   
