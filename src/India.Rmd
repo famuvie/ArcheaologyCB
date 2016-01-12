@@ -309,6 +309,38 @@ p.Ca
 
 
 
+
+```{r Ca-autokriging, include=FALSE}
+## Auto-kriging
+## Just a small test
+library(automap)
+dat.sp <- dataset
+coordinates(dat.sp) <- ~x + y
+autovg <- autofitVariogram(Ca ~ 1, dat.sp)
+
+# automap::autofitVariogram uses gstat::variogram
+# and fits models by minimizing the residual sum of squares
+# wrt the empirical variogram
+
+# compare the likelihood of these fits with the REML fit
+# of the exponential model
+
+vgmdl.test <- likfit(geodata = obs.gd,
+                       data = variable,
+                       fix.nugget = FALSE,
+                       fix.kappa = FALSE,
+                       kappa = 0.3,  # If 0.5 then cov.model changes to exponential
+                       ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
+                       cov.model = "matern",
+                       lik.method = "REML")
+
+# The likelihood is indeed higher, but very similar.
+# The problem is that the matern model does not converge
+# with the cost-based distances.
+
+```
+
+
 ## Cost-based kriging
 
 
