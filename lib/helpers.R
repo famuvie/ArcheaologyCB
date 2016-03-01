@@ -59,7 +59,8 @@ geom_variogram <- function(x, max.dist, scaled = FALSE, ...) {
 
 krige.loocv <- function(
   method = c('std', 'cst'),
-  geodata) {
+  geodata,
+  ddm) {
   
   method <- match.arg(method)
   
