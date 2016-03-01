@@ -2392,19 +2392,23 @@ p.foodremains
 
 ```{r foodremains-compare-kriging-estimates, fig.width=10, fig.height=7, fig.cap = 'Comparison of Kriging estimates.'}
 
-res.df.foodremains <- data.frame(loc, 
-                        method = c(rep('Classical', nrow(loc)),
-                                   rep('Cost-based', nrow(loc)),
-                                   rep('Difference', nrow(loc))),
-                        Prediction = c(kriging.std.foodremains$predict,
-                                          kriging.cst.foodremains$predict,
-                                          kriging.std.foodremains$predict-kriging.cst.foodremains$predict))
+res.df.foodremains <- data.frame(
+  loc, 
+  method = c(rep('Classical', nrow(loc)),
+             rep('Cost-based', nrow(loc)),
+             rep('Difference', nrow(loc)),
+             rep('Relative-difference', nrow(loc))),
+  Prediction = c(kriging.std.foodremains$predict,
+                 kriging.cst.foodremains$predict,
+                 kriging.std.foodremains$predict-kriging.cst.foodremains$predict,
+                 100*(kriging.std.foodremains$predict-kriging.cst.foodremains$predict)/kriging.cst.foodremains$predict)
+)
 
 p.foodremains <- 
-  ggplot(filter(res.df.foodremains, method != 'Difference'),
+  ggplot(filter(res.df.foodremains, method %in% c("Classical", "Cost-based")),
          aes(x, y)) + 
   geom_raster(aes(fill = Prediction, colour = Prediction)) +
-  stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
+  stat_contour(aes(z = Prediction), binwidth = .1, color = 'lightgray') +
   geom_india() +
   scale_fill_viridis() +
   scale_color_viridis() +
@@ -2433,16 +2437,20 @@ p.foodremains
 In the scatter plot, the horizontal patterns correspond to predictions on observed values.
 Otherwise, the differences are negligeable.
 
-```{r foodremains-map-kriging-difference, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based predictions.'}
+```{r foodremains-map-kriging-difference, fig.width=10, fig.height=6, fig.cap='Relative Difference between the Euclidean and the cost-based predictions. Expressed as a percentage wrt Cost-based prediction.'}
 
 pred.dif.foodremains <- 
-  ggplot(filter(res.df.foodremains, method == 'Difference'),
+  ggplot(filter(res.df.foodremains, method == 'Relative-difference'),
          aes(x, y)) + 
-  geom_tile(aes(fill = Prediction, colour = Prediction)) +
-  stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
+  geom_tile(aes(fill = Prediction, color = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = 2, color = 'lightgray') +
   geom_india() +
-  scale_fill_viridis(name = 'Difference in\npredictions') +
-  scale_color_viridis(name = 'Difference in\npredictions')
+  scale_fill_viridis(name = 'Relative\ndifference in\npredictions'
+                     # , limits = c(-5.5, 5.5)
+                     ) +
+  scale_color_viridis(name = 'Relative\ndifference in\npredictions'
+                     # , limits = c(-5.5, 5.5)
+                     )
 
 pred.dif.foodremains
 # grid.arrange(pred.comp, pred.dif)
@@ -2454,15 +2462,21 @@ pred.dif.foodremains
 
 ```{r foodremains-compare-kriging-errors, fig.width=10, fig.height=7, fig.cap = 'Comparison of prediction error by method.'}
 
-res.var.foodremains <- data.frame(loc, 
-                        method = c(rep('Classical', nrow(loc)),
-                                   rep('Cost-based', nrow(loc)),
-                                   rep('Difference', nrow(loc))),
-                        Prediction = c(kriging.std.foodremains$krige.var,
-                                          kriging.cst.foodremains$krige.var,
-                                          kriging.std.foodremains$krige.var-kriging.cst.foodremains$krige.var))
+res.var.foodremains <- data.frame(
+  loc, 
+  method = c(
+    rep('Classical', nrow(loc)),
+    rep('Cost-based', nrow(loc)),
+    rep('Difference', nrow(loc)),
+    rep('Relative-difference', nrow(loc))),
+  Prediction = c(
+    kriging.std.foodremains$krige.var,
+    kriging.cst.foodremains$krige.var,
+    kriging.std.foodremains$krige.var-kriging.cst.foodremains$krige.var,
+    100*(kriging.std.foodremains$krige.var-kriging.cst.foodremains$krige.var)/kriging.cst.foodremains$krige.var)
+)
 
-ggplot(filter(res.var.foodremains, method != 'Difference'),
+ggplot(filter(res.var.foodremains, method %in% c("Classical", "Cost-based")),
          aes(x, y)) + 
   geom_raster(aes(fill = Prediction, colour = Prediction)) +
   stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
@@ -2474,20 +2488,25 @@ ggplot(filter(res.var.foodremains, method != 'Difference'),
 ```
 
 
-```{r foodremains-map-kriging-difference-errors, fig.width=10, fig.height=6, fig.cap='Difference between the Euclidean and the cost-based prediction errors'}
+```{r foodremains-map-kriging-difference-errors, fig.width=10, fig.height=6, fig.cap='Relative difference between the Euclidean and the cost-based prediction errors. Expressed as a percentage wrt Cost-based variance.'}
 
-ggplot(filter(res.var.foodremains, method == 'Difference'),
+ggplot(filter(res.var.foodremains, method == 'Relative-difference'),
          aes(x, y)) + 
-  geom_tile(aes(fill = Prediction, colour = Prediction)) +
-  stat_contour(aes(z = Prediction), binwidth = .5, color = 'lightgray') +
+  geom_tile(aes(fill = Prediction, color = Prediction)) +
+  stat_contour(aes(z = Prediction), binwidth = 5, color = 'lightgray') +
   geom_india() +
-  scale_fill_viridis(name = 'Difference in\nKriging variance') +
-  scale_color_viridis(name = 'Difference in\nKriging variance')
+  scale_fill_viridis(name = 'Relative\ndifference in\nKriging variance',
+                     limits = c(-5, 5)) +
+  scale_color_viridis(name = 'Relative\ndifference in\nKriging variance',
+                     limits = c(-5, 5))
 ```
 
-Near the observations, the cost-based approach has a larger prediction error due to its increased estimation of the nugget (i.e. short-range variance).
 In the main area, the prediction errors are practically the same with both approaches.
-Behind the walls, the Euclidean prediction error is unrealistically low.
+In most of the area, the Cost-based approach is slightly more accurate (median 1%) achieving up to 1.4% of improvement in accuracy in the rightmost corners.
+
+The drop of about -5% prediction variance for the Euclidean prediction in the other corners and the veranda area are a consequence of incorrectly assuming that observations at the other side of the wall are *close*.
+
+Behind the walls, the Euclidean prediction error is unrealistically low (up to -23%) and is not represented.
 
 
 ## Leave-one-out Cross Validation (LOOCV)
