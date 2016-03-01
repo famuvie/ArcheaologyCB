@@ -67,9 +67,12 @@ dataset <- cbind(dataset, select(dataset.20150107, -one_of(id.vars)))
 stopifnot(identical(dataset[, id.vars], India.enclosed[, id.vars]))
 dataset$enclosedspaces <- India.enclosed$enclosedspaces
 
-
+## Fix some names
 dataset <- rename(dataset, sample = SAMPLE, x = X, y = Y)
 
+## Remove outliers
+rm_outliers <- function(x) {x[x %in% boxplot(x)$out] <- NA; x}
+dataset <- mutate_each(dataset, funs(rm_outliers), foodremains:ashes)
 
 ## Fix an isolated coordinate
 dataset$x[30] <- 10.2   

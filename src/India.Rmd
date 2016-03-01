@@ -173,7 +173,8 @@ cond_surf <- rasterize(shp.walls, prediction_grid, field = 0, background = 1)
 
 ```{r setup-obs-and-prediction-locations, cache = FALSE}
 obs.gd <- as.geodata(dataset[, -(1:3)], 
-                     data.col=levels(obs.india$variable))
+                     data.col=levels(obs.india$variable),
+                     na.action = 'none')
 loc <- coordinates(cond_surf)
 ```
 
@@ -2199,7 +2200,15 @@ pred_error %>%
 # Analysis of food remains
 
 ```{r foodremains-fix-variable}
-variable <- obs.gd$data[, 'foodremains']
+
+## Compute specific geodata object for this variable
+## in ordder to exclude the observations with NA which 
+## cause problems both in variog and krige.conv 
+## (although not in likfit)
+obs.gd <- as.geodata(dataset[, -(1:3)], 
+                     data.col = "foodremains")
+na.idx <- is.na(dataset$foodremains)
+which(na.idx)
 ```
 
 
@@ -2214,11 +2223,10 @@ We choose to estimate the nugget effect, which may account for measurement error
 ```{r foodremains-euclidean-kriging, include = FALSE}
 
 ## compute euclidean (only) variogram
-vg.std.foodremains <- variog(obs.gd, data = variable)
+vg.std.foodremains <- variog(obs.gd)
 
 ## fitting variogram models
 vgmdl.std.foodremains <- likfit(geodata = obs.gd,
-                       data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -2248,7 +2256,6 @@ par.tab <- data.frame(
 # Conventional Kriging, Euclidean distances
 KC.std.foodremains = krige.control(obj.model = vgmdl.std.foodremains)
 kriging.std.foodremains <- krige.conv(obs.gd,
-                             data = variable,
                              locations = loc,
                              krige = KC.std.foodremains)
 
@@ -2286,18 +2293,18 @@ p.foodremains
 
 
 ## compute cost-based empirical variogram
-vg.cst.foodremains <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+vg.cst.foodremains <- variog(obs.gd, dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## fitting variogram models
 vgmdl.cst.foodremains <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
                        ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
                        cov.model = "exponential",
                        lik.method = "REML",
-                       dists.mat = ddm$obs)
+                       dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## Fitted parameters
 par.tab <- cbind(par.tab,
@@ -2315,11 +2322,11 @@ par.tab <- cbind(par.tab,
 # Conventional Kriging, Euclidean distances
 KC.cst.foodremains = krige.control(obj.model = vgmdl.cst.foodremains)
 kriging.cst.foodremains <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.cst.foodremains,
-                             dd.dists.mat = ddm$obs,
-                             dl.dists.mat = ddm$loc)
+                             dd.dists.mat = ddm$obs[!na.idx, !na.idx],
+                             dl.dists.mat = ddm$loc[, !na.idx])
 
 ```
 
@@ -2487,8 +2494,11 @@ Behind the walls, the Euclidean prediction error is unrealistically low.
 
 ```{r foodremains-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
 loocvdat <- obs.gd
-loocvdat$data <- variable
-res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+# loocvdat$data <- variable
+ddm.na <- list(obs = ddm$obs[!na.idx, !na.idx],
+               loc = ddm$loc[, !na.idx])
+
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat, ddm.na)
 sink()   # Why I need this?
 
 # qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
@@ -2522,7 +2532,14 @@ pred_error %>%
 # Analysis of living room
 
 ```{r livingroom-fix-variable}
-variable <- obs.gd$data[, 'livingroom']
+
+## Compute specific geodata object for this variable
+## in ordder to exclude the observations with NA which 
+## cause problems both in variog and krige.conv 
+## (although not in likfit)
+obs.gd <- as.geodata(dataset[, -(1:3)], 
+                     data.col = "livingroom")
+na.idx <- is.na(dataset$livingroom)
 ```
 
 
@@ -2537,11 +2554,11 @@ We choose to estimate the nugget effect, which may account for measurement error
 ```{r livingroom-euclidean-kriging, include = FALSE}
 
 ## compute euclidean (only) variogram
-vg.std.livingroom <- variog(obs.gd, data = variable)
+vg.std.livingroom <- variog(obs.gd)
 
 ## fitting variogram models
 vgmdl.std.livingroom <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -2571,7 +2588,7 @@ par.tab <- data.frame(
 # Conventional Kriging, Euclidean distances
 KC.std.livingroom = krige.control(obj.model = vgmdl.std.livingroom)
 kriging.std.livingroom <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.std.livingroom)
 
@@ -2609,18 +2626,18 @@ p.livingroom
 
 
 ## compute cost-based empirical variogram
-vg.cst.livingroom <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+vg.cst.livingroom <- variog(obs.gd, dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## fitting variogram models
 vgmdl.cst.livingroom <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
                        ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
                        cov.model = "exponential",
                        lik.method = "REML",
-                       dists.mat = ddm$obs)
+                       dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## Fitted parameters
 par.tab <- cbind(par.tab,
@@ -2638,11 +2655,11 @@ par.tab <- cbind(par.tab,
 # Conventional Kriging, Euclidean distances
 KC.cst.livingroom = krige.control(obj.model = vgmdl.cst.livingroom)
 kriging.cst.livingroom <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.cst.livingroom,
-                             dd.dists.mat = ddm$obs,
-                             dl.dists.mat = ddm$loc)
+                             dd.dists.mat = ddm$obs[!na.idx, !na.idx],
+                             dl.dists.mat = ddm$loc[, !na.idx])
 
 ```
 
@@ -2810,8 +2827,11 @@ Behind the walls, the Euclidean prediction error is unrealistically low.
 
 ```{r livingroom-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
 loocvdat <- obs.gd
-loocvdat$data <- variable
-res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+# loocvdat$data <- variable
+ddm.na <- list(obs = ddm$obs[!na.idx, !na.idx],
+               loc = ddm$loc[, !na.idx])
+
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat, ddm.na)
 sink()   # Why I need this?
 
 # qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
@@ -2848,7 +2868,14 @@ All these results look very much like Calcium results, at a different scale.
 
 
 ```{r enclosedspaces-fix-variable}
-variable <- obs.gd$data[, 'enclosedspaces']
+
+## Compute specific geodata object for this variable
+## in ordder to exclude the observations with NA which 
+## cause problems both in variog and krige.conv 
+## (although not in likfit)
+obs.gd <- as.geodata(dataset[, -(1:3)], 
+                     data.col = "enclosedspaces")
+na.idx <- is.na(dataset$enclosedspaces)
 ```
 
 
@@ -2863,11 +2890,11 @@ We choose to estimate the nugget effect, which may account for measurement error
 ```{r enclosedspaces-euclidean-kriging, include = FALSE}
 
 ## compute euclidean (only) variogram
-vg.std.enclosedspaces <- variog(obs.gd, data = variable)
+vg.std.enclosedspaces <- variog(obs.gd)
 
 ## fitting variogram models
 vgmdl.std.enclosedspaces <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -2897,7 +2924,7 @@ par.tab <- data.frame(
 # Conventional Kriging, Euclidean distances
 KC.std.enclosedspaces = krige.control(obj.model = vgmdl.std.enclosedspaces)
 kriging.std.enclosedspaces <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.std.enclosedspaces)
 
@@ -2935,18 +2962,18 @@ p.enclosedspaces
 
 
 ## compute cost-based empirical variogram
-vg.cst.enclosedspaces <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+vg.cst.enclosedspaces <- variog(obs.gd, dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## fitting variogram models
 vgmdl.cst.enclosedspaces <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
                        ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
                        cov.model = "exponential",
                        lik.method = "REML",
-                       dists.mat = ddm$obs)
+                       dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## Fitted parameters
 par.tab <- cbind(par.tab,
@@ -2964,11 +2991,11 @@ par.tab <- cbind(par.tab,
 # Conventional Kriging, Euclidean distances
 KC.cst.enclosedspaces = krige.control(obj.model = vgmdl.cst.enclosedspaces)
 kriging.cst.enclosedspaces <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.cst.enclosedspaces,
-                             dd.dists.mat = ddm$obs,
-                             dl.dists.mat = ddm$loc)
+                             dd.dists.mat = ddm$obs[!na.idx, !na.idx],
+                             dl.dists.mat = ddm$loc[, !na.idx])
 
 ```
 
@@ -3136,8 +3163,11 @@ Behind the walls, the Euclidean prediction error is unrealistically low.
 
 ```{r enclosedspaces-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
 loocvdat <- obs.gd
-loocvdat$data <- variable
-res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+# loocvdat$data <- variable
+ddm.na <- list(obs = ddm$obs[!na.idx, !na.idx],
+               loc = ddm$loc[, !na.idx])
+
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat, ddm.na)
 sink()   # Why I need this?
 
 # qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
@@ -3171,7 +3201,14 @@ pred_error %>%
 # Analysis of burningareas
 
 ```{r burningareas-fix-variable}
-variable <- obs.gd$data[, 'burningareas']
+
+## Compute specific geodata object for this variable
+## in ordder to exclude the observations with NA which 
+## cause problems both in variog and krige.conv 
+## (although not in likfit)
+obs.gd <- as.geodata(dataset[, -(1:3)], 
+                     data.col = "burningareas")
+na.idx <- is.na(dataset$burningareas)
 ```
 
 
@@ -3186,11 +3223,11 @@ We choose to estimate the nugget effect, which may account for measurement error
 ```{r burningareas-euclidean-kriging, include = FALSE}
 
 ## compute euclidean (only) variogram
-vg.std.burningareas <- variog(obs.gd, data = variable)
+vg.std.burningareas <- variog(obs.gd)
 
 ## fitting variogram models
 vgmdl.std.burningareas <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -3220,7 +3257,7 @@ par.tab <- data.frame(
 # Conventional Kriging, Euclidean distances
 KC.std.burningareas = krige.control(obj.model = vgmdl.std.burningareas)
 kriging.std.burningareas <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.std.burningareas)
 
@@ -3258,18 +3295,18 @@ p.burningareas
 
 
 ## compute cost-based empirical variogram
-vg.cst.burningareas <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+vg.cst.burningareas <- variog(obs.gd, dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## fitting variogram models
 vgmdl.cst.burningareas <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
                        ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
                        cov.model = "exponential",
                        lik.method = "REML",
-                       dists.mat = ddm$obs)
+                       dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## Fitted parameters
 par.tab <- cbind(par.tab,
@@ -3287,11 +3324,11 @@ par.tab <- cbind(par.tab,
 # Conventional Kriging, Euclidean distances
 KC.cst.burningareas = krige.control(obj.model = vgmdl.cst.burningareas)
 kriging.cst.burningareas <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.cst.burningareas,
-                             dd.dists.mat = ddm$obs,
-                             dl.dists.mat = ddm$loc)
+                             dd.dists.mat = ddm$obs[!na.idx, !na.idx],
+                             dl.dists.mat = ddm$loc[, !na.idx])
 
 ```
 
@@ -3459,8 +3496,11 @@ Behind the walls, the Euclidean prediction error is unrealistically low.
 
 ```{r burningareas-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
 loocvdat <- obs.gd
-loocvdat$data <- variable
-res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+# loocvdat$data <- variable
+ddm.na <- list(obs = ddm$obs[!na.idx, !na.idx],
+               loc = ddm$loc[, !na.idx])
+
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat, ddm.na)
 sink()   # Why I need this?
 
 # qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
@@ -3494,7 +3534,14 @@ pred_error %>%
 # Analysis of ashes
 
 ```{r ashes-fix-variable}
-variable <- obs.gd$data[, 'ashes']
+
+## Compute specific geodata object for this variable
+## in ordder to exclude the observations with NA which 
+## cause problems both in variog and krige.conv 
+## (although not in likfit)
+obs.gd <- as.geodata(dataset[, -(1:3)], 
+                     data.col = "ashes")
+na.idx <- is.na(dataset$ashes)
 ```
 
 
@@ -3509,11 +3556,11 @@ We choose to estimate the nugget effect, which may account for measurement error
 ```{r ashes-euclidean-kriging, include = FALSE}
 
 ## compute euclidean (only) variogram
-vg.std.ashes <- variog(obs.gd, data = variable)
+vg.std.ashes <- variog(obs.gd)
 
 ## fitting variogram models
 vgmdl.std.ashes <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        # kappa = 0.51,  # If 0.5 then cov.model changes to exponential
@@ -3543,7 +3590,7 @@ par.tab <- data.frame(
 # Conventional Kriging, Euclidean distances
 KC.std.ashes = krige.control(obj.model = vgmdl.std.ashes)
 kriging.std.ashes <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.std.ashes)
 
@@ -3581,18 +3628,18 @@ p.ashes
 
 
 ## compute cost-based empirical variogram
-vg.cst.ashes <- variog(obs.gd, data = variable, dists.mat = ddm$obs)
+vg.cst.ashes <- variog(obs.gd, dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## fitting variogram models
 vgmdl.cst.ashes <- likfit(geodata = obs.gd,
-                       data = variable,
+                       # data = variable,
                        fix.nugget = FALSE,
                        fix.kappa = FALSE,
                        kappa = 0.51,  # If 0.5 then cov.model changes to exponential
                        ini = c(10, 5),  # sigma^2 (partial sill) and phi (range parameter)
                        cov.model = "exponential",
                        lik.method = "REML",
-                       dists.mat = ddm$obs)
+                       dists.mat = ddm$obs[!na.idx, !na.idx])
 
 ## Fitted parameters
 par.tab <- cbind(par.tab,
@@ -3610,11 +3657,11 @@ par.tab <- cbind(par.tab,
 # Conventional Kriging, Euclidean distances
 KC.cst.ashes = krige.control(obj.model = vgmdl.cst.ashes)
 kriging.cst.ashes <- krige.conv(obs.gd,
-                             data = variable,
+                             # data = variable,
                              locations = loc,
                              krige = KC.cst.ashes,
-                             dd.dists.mat = ddm$obs,
-                             dl.dists.mat = ddm$loc)
+                             dd.dists.mat = ddm$obs[!na.idx, !na.idx],
+                             dl.dists.mat = ddm$loc[, !na.idx])
 
 ```
 
@@ -3782,8 +3829,11 @@ Behind the walls, the Euclidean prediction error is unrealistically low.
 
 ```{r ashes-loocv, fig.width = 4, fig.height = 3, fig.cap = 'Pointwise leave-one-out prediction error by method.'}
 loocvdat <- obs.gd
-loocvdat$data <- variable
-res <- sapply(c('std', 'cst'), krige.loocv, loocvdat)
+# loocvdat$data <- variable
+ddm.na <- list(obs = ddm$obs[!na.idx, !na.idx],
+               loc = ddm$loc[, !na.idx])
+
+res <- sapply(c('std', 'cst'), krige.loocv, loocvdat, ddm.na)
 sink()   # Why I need this?
 
 # qplot(res[,1], res[,2]) + geom_abline(intercept=0, slope=1)
